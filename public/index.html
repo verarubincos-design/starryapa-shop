@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>StarryApa みんなで歩けるお店</title>
+<meta property="og:title" content="StarryApa みんなで歩けるお店">
+<meta property="og:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://starryapa-shop.onrender.com/">
+<meta property="og:image" content="https://starryapa-shop.onrender.com/assets/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="StarryApa みんなで歩けるお店">
+<meta name="twitter:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
+<meta name="twitter:image" content="https://starryapa-shop.onrender.com/assets/og.jpg">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1214; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; color: #f5ead9; }
@@ -49,8 +58,8 @@
   #chatBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 16; display: flex; gap: 6px; width: min(94vw, 520px); }
   #chatInput { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,217,160,0.4); background: rgba(30,18,20,0.85); color: #fff; font-size: 16px; }
   #chatSend { padding: 10px 16px; border-radius: 10px; border: none; background: #a83a4a; color: #fff; font-size: 14px; font-weight: bold; }
-  #stick { position: fixed; left: 18px; bottom: 120px; z-index: 16; width: 104px; height: 104px; border-radius: 50%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,217,160,0.35); display: none; }
-  #stickKnob { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,217,160,0.45); transform: translate(-50%, -50%); }
+  #stick { position: fixed; left: 18px; bottom: 120px; z-index: 16; width: 104px; height: 104px; border-radius: 50%; background: rgba(255,255,255,0.16); border: 2px solid rgba(255,217,160,0.85); display: none; }
+  #stickKnob { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,217,160,0.85); transform: translate(-50%, -50%); }
   body.touch #stick { display: block; }
   body.touch #chatLog { bottom: 240px; max-height: 24vh; }
   #errBox { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(10,6,8,0.9); padding: 20px; text-align: center; font-size: 14px; line-height: 1.9; }
@@ -62,7 +71,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.2）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
