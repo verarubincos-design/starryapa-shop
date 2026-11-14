@@ -130,7 +130,7 @@ function apiSay(body, res) {
   if (!a) return sendJson(res, 401, { authFailed: true });
   const text = String(body.text || '').trim().slice(0, 200);
   if (!text) return sendJson(res, 400, { error: 'empty' });
-  messages.push({ id: nextMsgId++, name: a.displayName, text, ts: Date.now() });
+  messages.push({ id: nextMsgId++, from: a.loginId.toLowerCase(), name: a.displayName, text, ts: Date.now() });
   if (messages.length > 50) messages = messages.slice(-50);
   return sendJson(res, 200, { ok: true });
 }
@@ -184,10 +184,11 @@ function serveStatic(req, res, urlPath) {
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end('forbidden'); }
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404); return res.end('not found'); }
+    const ext = path.extname(file).toLowerCase();
     res.writeHead(200, {
-      'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+      'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': st.size,
-      'Cache-Control': 'public, max-age=3600'
+      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
     });
     fs.createReadStream(file).pipe(res);
   });
