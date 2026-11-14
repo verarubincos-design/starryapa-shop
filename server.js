@@ -26,9 +26,66 @@ function saveData() {
 }
 loadData();
 
+// ---------- 店主アカウントの種まき (v3.3) ----------
+// Renderの無料プランは再デプロイ/再起動で data.json が消えるため、
+// 環境変数 HOST_PASSWORD が設定されていれば、起動のたびに店主アカウントが
+// 無い場合だけ作り直す。既存のアカウントは上書きしない。
+// パスワードはGitHubには置かず、Renderの Environment で設定する。
+const HOST_LOGIN_ID = (process.env.HOST_LOGIN_ID || 'vera').trim().toLowerCase();
+const HOST_DISPLAY_NAME = (process.env.HOST_DISPLAY_NAME || 'ベラ').trim() || 'ベラ';
+function ensureHostAccount() {
+  const pw = process.env.HOST_PASSWORD || '';
+  if (!pw || pw.length < 4) return;
+  if (accounts.has(HOST_LOGIN_ID)) return;
+  const salt = crypto.randomBytes(16).toString('hex');
+  accounts.set(HOST_LOGIN_ID, {
+    loginId: HOST_LOGIN_ID, salt, hash: hashPw(pw, salt),
+    displayName: HOST_DISPLAY_NAME, avatarType: 'vera', avatarColor: 'violet',
+    isHost: HOST_LOGIN_ID === 'vera', createdAt: Date.now()
+  });
+  saveData();
+}
+ensureHostAccount();
+
+// ---------- ログイン記憶 (v3.3) ----------
+// SESSION_SECRET が設定されていれば、トークンは秘密鍵付きの署名トークンになり、
+// サーバーの再起動・再デプロイをまたいで有効 (有効期限30日)。
+// 未設定なら従来どおりのランダム・メモリ内トークン。
+// 署名トークンのログアウトはブラウザ側のトークン削除のみ (サーバー側の無効化リストは無し)。
+const SESSION_SECRET = process.env.SESSION_SECRET || '';
+const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
+function makeToken(loginId) {
+  if (!SESSION_SECRET) return crypto.randomBytes(24).toString('hex');
+  const exp = Date.now() + TOKEN_TTL_MS;
+  const body = loginId + '.' + exp;
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('hex');
+  return body + '.' + sig;
+}
+function tokenToLoginId(token) {
+  if (!token) return null;
+  if (SESSION_SECRET && token.split('.').length === 3) {
+    const parts = token.split('.');
+    const id = parts[0], exp = parts[1], sig = parts[2];
+    if (!id || !exp || !sig) return null;
+    if (Date.now() > Number(exp)) return null;
+    const expect = crypto.createHmac('sha256', SESSION_SECRET).update(id + '.' + exp).digest('hex');
+    let a, b;
+    try { a = Buffer.from(sig, 'hex'); b = Buffer.from(expect, 'hex'); } catch (e) { return null; }
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return id.toLowerCase();
+  }
+  return sessions.get(token) || null;
+}
+
 // ---------- 実行時状態 ----------
 const sessions = new Map();  // token -> loginId(小文字)
-const presence = new Map();  // loginId(小文字) -> {x, z, yaw, lastSeen}
+const presence = new Map();  // loginId(小文字) -> {x, z, yaw, lastSeen, joinedAt, emote, emoteAt}
+// 在室判定 (v3.4): FRESH_MS 以内の heartbeat があれば「在室」として一覧に出す。
+// 以前は6秒だったため、タブがスロットリングされた端末が点滅して見えた。
+// KEEP_MS 以内なら同じ入室 (joinedAt 維持) とみなし、ドアベルの誤爆も防ぐ。
+const PRESENCE_FRESH_MS = 30000;
+const PRESENCE_KEEP_MS = 180000;
+const EMOTES = ['raise', 'jump', 'bow'];
 let messages = [];           // {id, name, text, ts}
 let nextMsgId = 1;
 
@@ -43,7 +100,7 @@ function publicAccount(a) {
 }
 function authOf(body) {
   if (!body || !body.token) return null;
-  const id = sessions.get(body.token);
+  const id = tokenToLoginId(body.token);
   if (!id) return null;
   return accounts.get(id) || null;
 }
@@ -66,7 +123,7 @@ function apiRegister(body, res) {
   };
   accounts.set(key, account);
   saveData();
-  const token = crypto.randomBytes(24).toString('hex');
+  const token = makeToken(key);
   sessions.set(token, key);
   return sendJson(res, 200, { token, account: publicAccount(account) });
 }
@@ -81,7 +138,7 @@ function apiLogin(body, res) {
   if (h.length !== stored.length || !crypto.timingSafeEqual(h, stored)) {
     return sendJson(res, 401, { error: 'IDかパスワードが違います' });
   }
-  const token = crypto.randomBytes(24).toString('hex');
+  const token = makeToken(key);
   sessions.set(token, key);
   return sendJson(res, 200, { token, account: publicAccount(a) });
 }
@@ -103,8 +160,16 @@ function apiLogout(body, res) {
 function apiHeartbeat(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
-  presence.set(a.loginId.toLowerCase(), {
-    x: +body.x || 0, z: +body.z || 0, yaw: +body.yaw || 0, lastSeen: Date.now()
+  const key = a.loginId.toLowerCase();
+  const now = Date.now();
+  const prev = presence.get(key);
+  // KEEP_MS 以内の再開は「同じ入室」の続きとして joinedAt とエモート状態を引き継ぐ
+  const sameVisit = !!prev && (now - prev.lastSeen <= PRESENCE_KEEP_MS);
+  presence.set(key, {
+    x: +body.x || 0, z: +body.z || 0, yaw: +body.yaw || 0, lastSeen: now,
+    joinedAt: sameVisit ? prev.joinedAt : now,
+    emote: sameVisit ? prev.emote : null,
+    emoteAt: sameVisit ? prev.emoteAt : 0
   });
   return sendJson(res, 200, { ok: true });
 }
@@ -116,13 +181,38 @@ function apiPlayers(body, res) {
   const now = Date.now();
   const list = [];
   for (const [key, p] of presence) {
+    if (now - p.lastSeen > PRESENCE_KEEP_MS) { presence.delete(key); continue; }
     if (key === meKey) continue;
-    if (now - p.lastSeen > 6000) continue;
+    if (now - p.lastSeen > PRESENCE_FRESH_MS) continue;
     const acc = accounts.get(key);
     if (!acc) continue;
-    list.push({ id: key, name: acc.displayName, avatarType: acc.avatarType, avatarColor: acc.avatarColor, isHost: acc.isHost, x: p.x, z: p.z, yaw: p.yaw });
+    list.push({
+      id: key, name: acc.displayName, avatarType: acc.avatarType, avatarColor: acc.avatarColor,
+      isHost: acc.isHost, x: p.x, z: p.z, yaw: p.yaw,
+      joinedAt: p.joinedAt, emote: p.emote, emoteAt: p.emoteAt
+    });
   }
   return sendJson(res, 200, { players: list });
+}
+
+function apiEmote(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const emote = String(body.emote || '');
+  if (!EMOTES.includes(emote)) return sendJson(res, 400, { error: 'unknown emote' });
+  const key = a.loginId.toLowerCase();
+  const now = Date.now();
+  const prev = presence.get(key);
+  const sameVisit = !!prev && (now - prev.lastSeen <= PRESENCE_KEEP_MS);
+  presence.set(key, {
+    x: prev ? prev.x : (+body.x || 0),
+    z: prev ? prev.z : (+body.z || 0),
+    yaw: prev ? prev.yaw : (+body.yaw || 0),
+    lastSeen: prev ? prev.lastSeen : now,
+    joinedAt: sameVisit ? prev.joinedAt : now,
+    emote, emoteAt: now
+  });
+  return sendJson(res, 200, { ok: true });
 }
 
 function apiSay(body, res) {
@@ -130,9 +220,11 @@ function apiSay(body, res) {
   if (!a) return sendJson(res, 401, { authFailed: true });
   const text = String(body.text || '').trim().slice(0, 200);
   if (!text) return sendJson(res, 400, { error: 'empty' });
-  messages.push({ id: nextMsgId++, from: a.loginId.toLowerCase(), name: a.displayName, text, ts: Date.now() });
+  const msg = { id: nextMsgId++, from: a.loginId.toLowerCase(), name: a.displayName, text, ts: Date.now() };
+  messages.push(msg);
   if (messages.length > 50) messages = messages.slice(-50);
-  return sendJson(res, 200, { ok: true });
+  // v3.4: 送信者に確定したメッセージ (id付き) を返す。クライアントの即時表示と重複排除に使う
+  return sendJson(res, 200, { ok: true, message: msg });
 }
 
 function apiMessages(body, res) {
@@ -155,6 +247,7 @@ const API = {
   '/api/logout': apiLogout,
   '/api/heartbeat': apiHeartbeat,
   '/api/players': apiPlayers,
+  '/api/emote': apiEmote,
   '/api/say': apiSay,
   '/api/messages': apiMessages,
   '/api/leave': apiLeave
