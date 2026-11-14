@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.4）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.4.3）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -137,6 +137,7 @@
 </div>
 <div id="menuPanel" class="hidden">
   <button class="hud-btn" id="btnMusic">🎵 音楽OFF</button>
+  <button class="hud-btn" id="btnView">📷 視点：一人称</button>
   <button class="hud-btn" id="btnSaveLog">ログ保存</button>
   <button class="hud-btn" id="btnToggleLog">ログを隠す</button>
   <button class="hud-btn" id="btnHelp">ヘルプ</button>
@@ -173,7 +174,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ---------------- API ----------------
 const TOKEN_KEY = 'starryapa_token';
+const VIEW_KEY = 'starryapa_view';
 let token = localStorage.getItem(TOKEN_KEY) || null;
+let thirdPerson = localStorage.getItem(VIEW_KEY) === 'third'; // v3.4.3: 三人称視点 (既定は一人称)
 let me = null; // {loginId, displayName, avatarType, avatarColor, isHost}
 
 async function api(pathName, body) {
@@ -323,6 +326,7 @@ async function initRoom() {
       gltf.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = true; } });
       scene.add(gltf.scene);
     } else {
+      stripGroundPlanes(gltf.scene);
       dollScenes[key] = gltf.scene;
     }
     done++;
@@ -416,7 +420,24 @@ function findArmParts(inner, type) {
   return { parts, pivot: new THREE.Vector3(spec.pivot[0], spec.pivot[1], spec.pivot[2]) };
 }
 
-function createAvatar(p) {
+// v3.4.1: 人形GLBに紛れ込んだ「地面プレーン」を読み込み時に取り除く。
+// vera_doll.glb には Blender 作業シーンの床 (30m×30m の Plane, 材質名 floor) が
+// 一緒に書き出されていて、そのままクローンするとアバターが部屋いっぱいの
+// 床シートを足元に抱え、エモートで床ごと動いて見えた。
+// 「横・奥行きが 5m 超で厚みほぼゼロ」の直下ノードだけを地面とみなして除去する
+// (人形の台座シリンダー等は 1.9m 幅なので残る)。
+function stripGroundPlanes(root) {
+  const kill = [];
+  for (const child of root.children) {
+    const b = new THREE.Box3().setFromObject(child);
+    if (b.isEmpty()) continue;
+    const sx = b.max.x - b.min.x, sy = b.max.y - b.min.y, sz = b.max.z - b.min.z;
+    if (sx > 5 && sz > 5 && sy < 0.1) kill.push(child);
+  }
+  for (const c of kill) root.remove(c);
+}
+
+function createAvatar(p, isSelf = false) {
   const src = dollScenes[p.avatarType] || dollScenes.vera;
   const inner = src.clone(true);
   const target = RECOLOR_MAT[p.avatarType] || 'violet';
@@ -437,7 +458,7 @@ function createAvatar(p) {
   inner.position.y = -box.min.y * s;
   const group = new THREE.Group();
   group.add(inner);
-  group.add(makeNameSprite(p.name, p.isHost));
+  if (!isSelf) group.add(makeNameSprite(p.name, p.isHost)); // 自分のアバターには名前札・吹き出しを付けない
   scene.add(group);
   const arm = findArmParts(inner, p.avatarType);
   return {
@@ -602,6 +623,7 @@ function setupTouchControls() {
 
 // ---------------- 同期 ----------------
 const remotes = new Map();
+let selfAvatar = null; // v3.4.3: 三人称視点用の自分のアバター (createAvatar と同じ形のレコード)
 let knownIds = null;
 const welcomed = new Map(); // id -> joinedAt (ドアベルを鳴らした入室の記録)
 let hbTimer = null, plTimer = null, msgTimer = null, rafId = null;
@@ -610,7 +632,6 @@ const sessionLog = [];
 const seenMsgIds = new Set();   // チャット欄に表示済みのメッセージid
 const loggedMsgIds = new Set(); // ログ保存用に記録済みのメッセージid
 const pendingOwn = [];          // 送信中でサーバー未確定の自分の発言 {text}
-let myEmote = null;             // 自分のエモート {name, t0} (カメラフィードバック用)
 
 async function pollPlayers() {
   const { data } = await apiAuth('/api/players', {});
@@ -703,20 +724,65 @@ function renderLoop() {
     const [nx, nz] = collide(pos.x + mx * sp, pos.z + mz * sp);
     pos.x = nx; pos.z = nz;
   }
-  // 自分のエモートのカメラフィードバック (ジャンプ=視点が跳ねる / お辞儀=少し見下ろす)
-  let camY = 1.5, camPitch = pitch;
-  if (myEmote) {
-    const t = (performance.now() - myEmote.t0) / 1000;
-    if (myEmote.name === 'jump') {
-      if (t < 0.45) camY += 0.25 * Math.sin(Math.PI * t / 0.45); else myEmote = null;
-    } else if (myEmote.name === 'bow') {
-      if (t < 1.0) camPitch -= 0.30 * Math.sin(Math.PI * t / 1.0); else myEmote = null;
-    } else if (t > 1.2) myEmote = null;
-  }
-  camera.position.set(pos.x, camY, pos.z);
-  camera.rotation.set(camPitch, yaw, 0);
-  // リモート補間 + エモート
   const now = performance.now();
+  if (thirdPerson) {
+    // v3.4.3: 三人称カメラ。自キャラの後ろ (視線方向の逆) に回り込んで後ろ姿を見る。
+    // 三人称では視点演出 (跳ね・見下ろし) は付けない。人形の動き自体が見えるのが手応えになる
+    myEmote = null;
+    const D = 1.8;                                     // キャラからの距離
+    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw); // 視線の前方ベクトル (一人称と共通)
+    // 後ろ方向にどれだけ下がれるか: 歩行境界 (collide) の内側マージンまでの距離で決める。
+    // 単純な座標クランプだと壁際でカメラがキャラの前に回り込むため、レイ方式にする
+    let tMax = D;
+    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x + 3.75) / fwdX);
+    else if (fwdX < -0.0001) tMax = Math.min(tMax, (3.75 - pos.x) / -fwdX);
+    if (fwdZ > 0.0001) tMax = Math.min(tMax, (pos.z + 3.3) / fwdZ);
+    else if (fwdZ < -0.0001) tMax = Math.min(tMax, (3.15 - pos.z) / -fwdZ);
+    let cx, cy, cz;
+    if (tMax >= 0.3) {
+      const camDist = Math.max(0.3, tMax);
+      cx = pos.x - fwdX * camDist; cz = pos.z - fwdZ * camDist;
+      cy = 1.45 - pitch * 0.8;                       // pitch (見上げ/見下ろし) でカメラの高さが少し動く
+    } else {
+      // 背後に壁が近すぎる時は、ほぼ真上から見下ろす形にする (キャラが画面外に消えないように)
+      const back = Math.max(0, tMax);
+      cx = pos.x - fwdX * back; cz = pos.z - fwdZ * back;
+      cy = 2.1;
+    }
+    camera.position.set(cx, cy, cz);
+    // キャラの少し上・少し前を見る
+    camera.lookAt(pos.x + fwdX * 0.4, 0.95 + pitch * 0.5, pos.z + fwdZ * 0.4);
+  } else {
+    // v3.4.2: 自分のエモートの視点フィードバック (v3.4 仕様。本人の希望で復活)。
+    // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
+    // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
+    // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
+    let camY = 1.5, camPitch = pitch;
+    if (myEmote) {
+      const t = (now - myEmote.t0) / 1000;
+      if (myEmote.name === 'jump') {
+        if (t >= 0.45) myEmote = null;
+        else camY += 0.25 * Math.sin(Math.PI * t / 0.45); // 人形の跳ね (emoteFrame) と同じ弧
+      } else if (myEmote.name === 'bow') {
+        if (t >= 1.0) myEmote = null;
+        else camPitch -= THREE.MathUtils.degToRad(20) * Math.sin(Math.PI * t / 1.0); // 見下ろし
+      } else myEmote = null;
+    }
+    camera.position.set(pos.x, camY, pos.z);
+    camera.rotation.set(camPitch, yaw, 0);
+  }
+  // 自分のアバター: 三人称の時だけ表示し、自分の位置・向き・エモートをそのまま反映する。
+  // 向きは リモートと同じ式 (yaw + π) — モデルの正面 (+Z) が視線方向を向くので、
+  // 後ろに置いたカメラからは後ろ姿が見える
+  if (selfAvatar) {
+    selfAvatar.group.visible = thirdPerson;
+    const sfx = emoteFrame(selfAvatar, now);
+    selfAvatar.group.position.set(pos.x, sfx.yOff, pos.z);
+    selfAvatar.group.rotation.y = yaw + Math.PI;
+    selfAvatar.inner.rotation.x = sfx.bowX;
+    selfAvatar.inner.rotation.z = sfx.rockZ;
+  }
+  // リモート補間 + エモート
   for (const r of remotes.values()) {
     r.cur.x += (r.tgt.x - r.cur.x) * 0.18;
     r.cur.z += (r.tgt.z - r.cur.z) * 0.18;
@@ -811,6 +877,30 @@ function setMusic(on) {
 }
 $('btnMusic').onclick = () => { setMusic(!musicOn); $('menuPanel').classList.add('hidden'); };
 
+// ---------------- 視点切替 (v3.4.3) ----------------
+function setView(third, save = true) {
+  thirdPerson = third;
+  if (save) localStorage.setItem(VIEW_KEY, third ? 'third' : 'first');
+  $('btnView').textContent = third ? '📷 視点：三人称' : '📷 視点：一人称';
+  if (selfAvatar) selfAvatar.group.visible = third && inRoom;
+}
+$('btnView').onclick = () => {
+  myEmote = null; // 切替の瞬間に視点演出が残らないように
+  setView(!thirdPerson);
+  $('menuPanel').classList.add('hidden');
+};
+setView(thirdPerson, false); // 保存済みの選択をボタンの表示に反映 (既定は一人称)
+
+// 自分のアバターを用意する (リモートと同じ生成経路。名前札なし)
+function ensureSelfAvatar() {
+  if (selfAvatar || !me) return;
+  selfAvatar = createAvatar(
+    { avatarType: me.avatarType, avatarColor: me.avatarColor, name: me.displayName, isHost: me.isHost, x: pos.x, z: pos.z, yaw, emoteAt: 0 },
+    true
+  );
+  selfAvatar.group.visible = thirdPerson;
+}
+
 // ---------------- 入室 / 退室 ----------------
 $('doEnter').onclick = async () => {
   chimeResumeOnly();
@@ -826,12 +916,14 @@ $('doEnter').onclick = async () => {
   $('loading').classList.add('hidden');
   pos.x = START.x; pos.z = START.z; lookAtStart();
   inRoom = true;
+  ensureSelfAvatar();
+  if (selfAvatar) selfAvatar.group.visible = thirdPerson;
   knownIds = null;
   for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar']) $(el).classList.remove('hidden');
   setupTouchControlsOnce();
   $('helpText').innerHTML = isTouch
-    ? '左下のスティックで移動、画面をドラッグで見回します。<br>下の入力欄からチャット、右のボタンでエモートができます。'
-    : 'ドラッグで見回す、WASD／矢印キーで移動。<br>Enterキーでチャット入力、右のボタンでエモートができます。';
+    ? '左下のスティックで移動、画面をドラッグで見回します。<br>下の入力欄からチャット、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。'
+    : 'ドラッグで見回す、WASD／矢印キーで移動。<br>Enterキーでチャット入力、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。';
   $('helpCard').classList.remove('hidden');
   startRoomLoops();
   setMusic(true);
@@ -849,6 +941,7 @@ async function leaveRoom() {
   for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
+  if (selfAvatar) selfAvatar.group.visible = false;
   showLobby();
 }
 $('btnLeave').onclick = leaveRoom;
@@ -927,12 +1020,19 @@ addEventListener('keydown', e => {
 
 // ---------------- エモート ----------------
 let lastEmoteSentAt = 0;
+let myEmote = null; // 自分のエモートの視点フィードバック用 {name, t0} (v3.4.2)
 function doEmote(name) {
   if (!inRoom || !me) return;
   const now = performance.now();
   if (now - lastEmoteSentAt < 400) return; // 連打防止
   lastEmoteSentAt = now;
-  myEmote = { name, t0: now };
+  // 自分のアバターにも同じエモートを付ける (三人称で見える。一人称では非表示なだけで害はない)
+  if (selfAvatar) {
+    restoreArm(selfAvatar); // 前の「手をあげる」が途中でも腕を戻してから次へ (リモートと同じ)
+    selfAvatar.emote = { name, t0: now };
+  }
+  // 視点フィードバックは一人称の時だけ (三人称では人形の動きが見えるので付けない)
+  if (!thirdPerson && (name === 'jump' || name === 'bow')) myEmote = { name, t0: now };
   apiAuth('/api/emote', { emote: name, x: pos.x, z: pos.z, yaw }).catch(() => {});
 }
 $('emoteRaise').onclick = () => doEmote('raise');
