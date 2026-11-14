@@ -62,7 +62,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店</div>
+    <div class="sub">みんなで歩ける小さなお店（v3）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -124,6 +124,7 @@
   <button class="hud-btn" id="btnMenu">☰ メニュー</button>
 </div>
 <div id="menuPanel" class="hidden">
+  <button class="hud-btn" id="btnMusic">🎵 音楽OFF</button>
   <button class="hud-btn" id="btnSaveLog">ログ保存</button>
   <button class="hud-btn" id="btnToggleLog">ログを隠す</button>
   <button class="hud-btn" id="btnHelp">ヘルプ</button>
@@ -140,6 +141,7 @@
   <input type="text" id="chatInput" placeholder="メッセージを入力" maxlength="200">
   <button id="chatSend">送信</button>
 </div>
+<audio id="bgm" loop preload="auto" src="assets/starry_waltz.mp3"></audio>
 <div id="stick"><div id="stickKnob"></div></div>
 
 <script type="importmap">
@@ -470,24 +472,18 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 
-// マウス視点 (ポインターロック / ドラッグ)
-let locked = false, dragging = false, lastPX = 0, lastPY = 0;
-document.addEventListener('pointerlockchange', () => {
-  locked = document.pointerLockElement && renderer && document.pointerLockElement === renderer.domElement;
-});
+// マウス視点 (ドラッグで見回す)
+let dragging = false, lastPX = 0, lastPY = 0;
 document.addEventListener('mousemove', e => {
-  if (!inRoom) return;
-  if (locked) {
-    yaw -= e.movementX * 0.0023;
-    pitch -= e.movementY * 0.0023;
-    pitch = Math.max(-1.1, Math.min(1.1, pitch));
-  } else if (dragging) {
-    yaw -= (e.clientX - lastPX) * 0.005;
-    pitch -= (e.clientY - lastPY) * 0.005;
-    pitch = Math.max(-1.1, Math.min(1.1, pitch));
-    lastPX = e.clientX; lastPY = e.clientY;
-  }
+  if (!inRoom || !dragging) return;
+  if (e.buttons === 0) { dragging = false; return; }
+  yaw -= (e.clientX - lastPX) * 0.005;
+  pitch -= (e.clientY - lastPY) * 0.005;
+  pitch = Math.max(-1.1, Math.min(1.1, pitch));
+  lastPX = e.clientX; lastPY = e.clientY;
 });
+addEventListener('blur', () => { dragging = false; });
+addEventListener('keydown', e => { if (e.code === 'Escape') dragging = false; });
 
 // ジョイスティック
 const stickVec = { x: 0, y: 0 };
@@ -497,11 +493,11 @@ function setupTouchControls() {
   const cv = renderer.domElement;
   cv.addEventListener('pointerdown', e => {
     if (!inRoom || isTouch) return;
-    if (document.activeElement === $('chatInput')) return;
-    if (!locked) {
-      try { cv.requestPointerLock(); } catch (err) { dragging = true; lastPX = e.clientX; lastPY = e.clientY; }
-    }
+    dragging = true; lastPX = e.clientX; lastPY = e.clientY;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
   });
+  cv.addEventListener('pointerup', () => { dragging = false; });
+  cv.addEventListener('pointercancel', () => { dragging = false; });
   addEventListener('pointerup', () => { dragging = false; });
   // タッチ視点ドラッグ (スティック以外)
   let lookId = null, lx = 0, ly = 0;
@@ -582,7 +578,7 @@ async function pollMessages() {
     lastMsgId = Math.max(lastMsgId, m.id);
     sessionLog.push(m);
     appendChat(m);
-    if (me && m.name !== me.displayName) showBubbleFor(m);
+    if (me && m.from !== me.loginId) showBubbleFor(m);
   }
 }
 function appendChat(m) {
@@ -596,6 +592,7 @@ function appendChat(m) {
   log.scrollTop = log.scrollHeight;
 }
 function showBubbleFor(m) {
+  if (m.from && remotes.has(m.from)) { setBubble(remotes.get(m.from), m.text); return; }
   for (const r of remotes.values()) {
     if (r.playerName === m.name) { setBubble(r, m.text); return; }
   }
@@ -658,6 +655,17 @@ function stopRoomLoops() {
   hbTimer = plTimer = msgTimer = rafId = null;
 }
 
+// ---------------- BGM (Starry Waltz) ----------------
+const bgmEl = $('bgm');
+let musicOn = false;
+function setMusic(on) {
+  musicOn = on;
+  $('btnMusic').textContent = on ? '🎵 音楽ON' : '🎵 音楽OFF';
+  if (on) { bgmEl.volume = 0.45; bgmEl.play().catch(() => {}); }
+  else bgmEl.pause();
+}
+$('btnMusic').onclick = () => { setMusic(!musicOn); $('menuPanel').classList.add('hidden'); };
+
 // ---------------- 入室 / 退室 ----------------
 $('doEnter').onclick = async () => {
   chimeResumeOnly();
@@ -678,9 +686,10 @@ $('doEnter').onclick = async () => {
   setupTouchControlsOnce();
   $('helpText').innerHTML = isTouch
     ? '左下のスティックで移動、画面をドラッグで見回します。<br>下の入力欄からチャットできます。'
-    : 'クリックでマウス操作（WASDで移動）、Escで解除。<br>ドラッグでも見回せます。下の入力欄からチャットできます。';
+    : 'ドラッグで見回す、WASD／矢印キーで移動。<br>下の入力欄からチャットできます。';
   $('helpCard').classList.remove('hidden');
   startRoomLoops();
+  setMusic(true);
 };
 function chimeResumeOnly() {
   try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
@@ -690,6 +699,7 @@ function setupTouchControlsOnce() { if (!touchSetupDone) { setupTouchControls();
 
 async function leaveRoom() {
   stopRoomLoops();
+  setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
   for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'menuPanel', 'helpCard']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
