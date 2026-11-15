@@ -8,11 +8,11 @@
 <meta property="og:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://starryapa-shop.onrender.com/">
-<meta property="og:image" content="https://starryapa-shop.onrender.com/assets/og.jpg">
+<meta property="og:image" content="https://starryapa-shop.onrender.com/assets/og_town.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="StarryApa みんなで歩けるお店">
 <meta name="twitter:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
-<meta name="twitter:image" content="https://starryapa-shop.onrender.com/assets/og.jpg">
+<meta name="twitter:image" content="https://starryapa-shop.onrender.com/assets/og_town.jpg">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1214; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; color: #f5ead9; }
@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.9）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.9.2）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -158,6 +158,7 @@
   <button id="emoteRaise">🙋 手をあげる</button>
   <button id="emoteJump">⤴ ジャンプ</button>
   <button id="emoteBow">🙇 お辞儀</button>
+  <button id="emoteJoy">🙌 よろこぶ</button>
 </div>
 <audio id="bgm" loop preload="auto" src="assets/starry_waltz.mp3"></audio>
 <div id="stick"><div id="stickKnob"></div></div>
@@ -419,6 +420,17 @@ function findArmParts(inner, type) {
   }
   return { parts, pivot: new THREE.Vector3(spec.pivot[0], spec.pivot[1], spec.pivot[2]) };
 }
+// 左腕用 (よろこぶで両手を上げる)。ノード名は右の "…1" に対して "…-1"、支点は x 反転
+function findArmPartsL(inner, type) {
+  const spec = ARM_SPEC[type] || ARM_SPEC.vera;
+  const parts = [];
+  for (const name of spec.parts) {
+    const node = inner.getObjectByName(name.replace(/1$/, '-1'));
+    if (!node) return { parts: [], pivot: null }; // 揃わなければその腕は動かさない
+    parts.push({ node, pos0: node.position.clone(), quat0: node.quaternion.clone() });
+  }
+  return { parts, pivot: new THREE.Vector3(-spec.pivot[0], spec.pivot[1], spec.pivot[2]) };
+}
 
 // v3.4.1: 人形GLBに紛れ込んだ「地面プレーン」を読み込み時に取り除く。
 // vera_doll.glb には Blender 作業シーンの床 (30m×30m の Plane, 材質名 floor) が
@@ -461,10 +473,12 @@ function createAvatar(p, isSelf = false) {
   if (!isSelf) group.add(makeNameSprite(p.name, p.isHost)); // 自分のアバターには名前札・吹き出しを付けない
   scene.add(group);
   const arm = findArmParts(inner, p.avatarType);
+  const armL = findArmPartsL(inner, p.avatarType);
   return {
     group, inner, bubble: null, bubbleUntil: 0, playerName: p.name,
     cur: { x: p.x, z: p.z, yaw: p.yaw }, tgt: { x: p.x, z: p.z, yaw: p.yaw },
     armParts: arm.parts || [], armPivot: arm.pivot || null,
+    armPartsL: armL.parts || [], armPivotL: armL.pivot || null,
     emote: null, lastEmoteAt: p.emoteAt || 0
   };
 }
@@ -843,7 +857,7 @@ function renderLoop() {
     // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
     // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
     // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
-    let camY = 1.5, camPitch = pitch;
+    let camY = 1.5, camPitch = pitch, camYaw = yaw;
     if (myEmote) {
       const t = (now - myEmote.t0) / 1000;
       if (myEmote.name === 'jump') {
@@ -852,10 +866,13 @@ function renderLoop() {
       } else if (myEmote.name === 'bow') {
         if (t >= 1.0) myEmote = null;
         else camPitch -= THREE.MathUtils.degToRad(20) * Math.sin(Math.PI * t / 1.0); // 見下ろし
+      } else if (myEmote.name === 'joy') {
+        if (t >= 1.6) myEmote = null;
+        else camYaw = yaw + Math.PI * 2 * (t / 1.6); // 自分もその場で1周回る
       } else myEmote = null;
     }
     camera.position.set(pos.x, camY, pos.z);
-    camera.rotation.set(camPitch, yaw, 0);
+    camera.rotation.set(camPitch, camYaw, 0);
   }
   // 自分のアバター: 三人称の時だけ表示し、自分の位置・向き・エモートをそのまま反映する。
   // 向きは リモートと同じ式 (yaw + π) — モデルの正面 (+Z) が視線方向を向くので、
@@ -867,6 +884,7 @@ function renderLoop() {
     selfAvatar.group.rotation.y = yaw + Math.PI;
     selfAvatar.inner.rotation.x = sfx.bowX;
     selfAvatar.inner.rotation.z = sfx.rockZ;
+    selfAvatar.inner.rotation.y = sfx.spinY;
   }
   // リモート補間 + エモート
   for (const r of remotes.values()) {
@@ -881,6 +899,7 @@ function renderLoop() {
     r.group.rotation.y = r.cur.yaw + Math.PI;
     r.inner.rotation.x = fx.bowX;
     r.inner.rotation.z = fx.rockZ;
+    r.inner.rotation.y = fx.spinY;
     if (r.bubble && now > r.bubbleUntil) {
       r.group.remove(r.bubble); r.bubble = null;
     }
@@ -892,7 +911,7 @@ function renderLoop() {
 // 戻り値: {yOff, bowX, rockZ}。終わったら r.emote を片付ける
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 function emoteFrame(r, now) {
-  const out = { yOff: 0, bowX: 0, rockZ: 0 };
+  const out = { yOff: 0, bowX: 0, rockZ: 0, spinY: 0 };
   if (!r.emote) return out;
   const t = (now - r.emote.t0) / 1000;
   const name = r.emote.name;
@@ -918,6 +937,17 @@ function emoteFrame(r, now) {
       out.rockZ = Math.sin(t * 10) * 0.12 * k;
       out.yOff = Math.abs(Math.sin(t * 10)) * 0.03 * k;
     }
+  } else if (name === 'joy') {
+    // よろこぶ: 両手を2回上げ下げしながら、その場で1周回る (1.6秒)
+    if (t >= 1.6) { restoreArm(r); r.emote = null; return out; }
+    out.spinY = Math.PI * 2 * (t / 1.6);
+    const f = (1 - Math.cos(Math.PI * 4 * t / 1.6)) / 2; // 0→1→0→1→0
+    const ang = THREE.MathUtils.degToRad(140) * f;
+    if (r.armParts.length && r.armPivot) applyArmRaise(r, ang);
+    if (r.armPartsL && r.armPartsL.length && r.armPivotL) applyArmRaiseL(r, ang);
+    if (!r.armParts.length && !(r.armPartsL && r.armPartsL.length)) {
+      out.rockZ = Math.sin(t * 10) * 0.12; // フォールバック: 体を揺らす (回転はする)
+    }
   }
   return out;
 }
@@ -930,8 +960,21 @@ function applyArmRaise(r, ang) {
     part.node.quaternion.copy(q).multiply(part.quat0);
   }
 }
+function applyArmRaiseL(r, ang) {
+  const q = new THREE.Quaternion().setFromAxisAngle(Z_AXIS, -ang); // 左腕は鏡像なので符号反転
+  const tmp = new THREE.Vector3();
+  for (const part of r.armPartsL) {
+    tmp.copy(part.pos0).sub(r.armPivotL).applyQuaternion(q).add(r.armPivotL);
+    part.node.position.copy(tmp);
+    part.node.quaternion.copy(q).multiply(part.quat0);
+  }
+}
 function restoreArm(r) {
   for (const part of r.armParts) {
+    part.node.position.copy(part.pos0);
+    part.node.quaternion.copy(part.quat0);
+  }
+  if (r.armPartsL) for (const part of r.armPartsL) {
     part.node.position.copy(part.pos0);
     part.node.quaternion.copy(part.quat0);
   }
@@ -1118,12 +1161,13 @@ function doEmote(name) {
     selfAvatar.emote = { name, t0: now };
   }
   // 視点フィードバックは一人称の時だけ (三人称では人形の動きが見えるので付けない)
-  if (!thirdPerson && (name === 'jump' || name === 'bow')) myEmote = { name, t0: now };
+  if (!thirdPerson && (name === 'jump' || name === 'bow' || name === 'joy')) myEmote = { name, t0: now };
   apiAuth('/api/emote', { emote: name, x: pos.x, z: pos.z, yaw }).catch(() => {});
 }
 $('emoteRaise').onclick = () => doEmote('raise');
 $('emoteJump').onclick = () => doEmote('jump');
 $('emoteBow').onclick = () => doEmote('bow');
+$('emoteJoy').onclick = () => doEmote('joy');
 
 // ページを閉じる時に退室
 addEventListener('pagehide', () => {
