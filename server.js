@@ -85,7 +85,7 @@ const presence = new Map();  // loginId(小文字) -> {x, z, yaw, lastSeen, join
 // KEEP_MS 以内なら同じ入室 (joinedAt 維持) とみなし、ドアベルの誤爆も防ぐ。
 const PRESENCE_FRESH_MS = 30000;
 const PRESENCE_KEEP_MS = 180000;
-const EMOTES = ['raise', 'jump', 'bow'];
+const EMOTES = ['raise', 'jump', 'bow', 'joy'];
 let messages = [];           // {id, name, text, ts}
 let nextMsgId = 1;
 
