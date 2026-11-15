@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.5）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.6）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -296,7 +296,7 @@ async function initRoom() {
   $('room').appendChild(renderer.domElement);
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1214);
+  scene.background = new THREE.Color(0x2c3d63);   // v3.6: 薄暮ブルーの空 (ベラの希望で明るく)
   camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.05, 100);
   camera.rotation.order = 'YXZ';
   clock = new THREE.Clock();
@@ -503,7 +503,7 @@ function chime() {
 }
 
 // ---------------- 自分の移動 ----------------
-const START = { x: -9.6, z: 0.6 };   // v3.5: 門の外 (アプローチ) からスタート
+const START = { x: -13.9, z: 0.6 };   // v3.6: 通りの上からスタート (店は道路の向かい)
 const pos = { x: START.x, z: START.z };
 let yaw = 0, pitch = 0;
 function lookAtStart() {
@@ -529,14 +529,23 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-5.74, -5.5, -0.7, -0.46],  // ポーチ柱 (南)
   [-5.74, -5.5, 1.66, 1.9],    // ポーチ柱 (北)
   [-7.02, -6.78, 1.73, 1.97],  // ランプ柱
-  [-8.82, -8.58, -0.77, -0.53] // ランプ柱
+  [-8.82, -8.58, -0.77, -0.53],// ランプ柱
+  // v3.6: 街灯の柱
+  [-12.47, -12.23, 5.38, 5.62],
+  [-12.47, -12.23, -0.72, -0.48],
+  [-12.47, -12.23, -6.62, -6.38]
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
 const REGIONS = [
   [-3.9, 3.9, -3.45, 3.3],     // 店内
   [-10.3, -4.02, -3.3, 3.3],   // 庭 (外エリア)
-  [-4.35, -3.85, 0.02, 1.18]   // 出入口の通り道
+  [-4.35, -3.85, 0.02, 1.18],  // 出入口の通り道
+  // v3.6: 通りまわり。木柵は門 (z -0.25..1.45) の所だけ抜けられる
+  [-12.55, -10.55, -11, -0.25],// 歩道 (南側)
+  [-12.55, -10.55, 1.45, 11],  // 歩道 (北側)
+  [-12.55, -10.05, -0.25, 1.45],// 門前の横断部分
+  [-15.3, -12.4, -11, 11]      // 道路
 ];
 function inRegion(x, z) {
   const E = 1e-6;
@@ -762,7 +771,7 @@ function renderLoop() {
     // 後ろ方向にどれだけ下がれるか: 歩行境界 (collide) の内側マージンまでの距離で決める。
     // 単純な座標クランプだと壁際でカメラがキャラの前に回り込むため、レイ方式にする
     // v3.5: カメラの後退限界は、今いる側 (店内/庭) の壁までに合わせる
-    const camMinX = pos.x < -3.85 ? -10.55 : -3.75;
+    const camMinX = pos.x < -3.85 ? -15.75 : -3.75;
     const camMaxX = pos.x < -3.85 ? -4.35 : 3.75;
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
