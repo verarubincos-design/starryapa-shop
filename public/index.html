@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.4.3）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.5）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -503,13 +503,13 @@ function chime() {
 }
 
 // ---------------- 自分の移動 ----------------
-const START = { x: -3.2, z: 0.6 };
+const START = { x: -9.6, z: 0.6 };   // v3.5: 門の外 (アプローチ) からスタート
 const pos = { x: START.x, z: START.z };
 let yaw = 0, pitch = 0;
 function lookAtStart() {
-  const dx = -1.55 - pos.x, dz = -2.95 - pos.z;
+  const dx = -4.2 - pos.x, dz = 0.6 - pos.z;   // 店の入口ドアを見る
   yaw = Math.atan2(-dx, -dz);
-  pitch = Math.atan2(1.2 - 1.5, Math.hypot(dx, dz));
+  pitch = Math.atan2(1.3 - 1.5, Math.hypot(dx, dz));
 }
 lookAtStart();
 
@@ -519,24 +519,52 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-4.2, -1.2, 1.05, 1.25],    // 間仕切り
   [-1.0, 1.2, 2.45, 3.35],     // ソファ
   [-0.3, 0.6, 1.7, 2.3],       // コーヒーテーブル
-  [1.6, 2.3, 1.85, 2.55]       // アームチェア
+  [1.6, 2.3, 1.85, 2.55],      // アームチェア
+  // v3.5: 外エリアの障害物
+  [-4.78, -4.26, 1.28, 1.96],  // プランター (ドア北側)
+  [-4.78, -4.26, -0.76, -0.08],// プランター (ドア南側)
+  [-5.1, -4.15, 1.9, 2.8],     // 植え込み (北)
+  [-5.1, -4.15, -2.0, -1.1],   // 植え込み (中央)
+  [-5.1, -4.15, -3.2, -2.3],   // 植え込み (南)
+  [-5.74, -5.5, -0.7, -0.46],  // ポーチ柱 (南)
+  [-5.74, -5.5, 1.66, 1.9],    // ポーチ柱 (北)
+  [-7.02, -6.78, 1.73, 1.97],  // ランプ柱
+  [-8.82, -8.58, -0.77, -0.53] // ランプ柱
 ];
+// v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
+// 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
+const REGIONS = [
+  [-3.9, 3.9, -3.45, 3.3],     // 店内
+  [-10.3, -4.02, -3.3, 3.3],   // 庭 (外エリア)
+  [-4.35, -3.85, 0.02, 1.18]   // 出入口の通り道
+];
+function inRegion(x, z) {
+  const E = 1e-6;
+  for (const [a, b, c, d] of REGIONS) if (x >= a - E && x <= b + E && z >= c - E && z <= d + E) return true;
+  return false;
+}
 function collide(nx, nz) {
-  nx = Math.max(-3.9, Math.min(3.9, nx));
-  nz = Math.max(-3.45, Math.min(3.3, nz));
+  // 範囲外に出る移動は、軸ごとに滑らせる (壁沿いに進めるように)
+  if (!inRegion(nx, nz)) {
+    if (inRegion(nx, pos.z)) nz = pos.z;
+    else if (inRegion(pos.x, nz)) nx = pos.x;
+    else { nx = pos.x; nz = pos.z; }
+  }
   const r = 0.3;
+  let fx = nx, fz = nz;
   for (const [x0, x1, z0, z1] of BOXES) {
-    const cx = Math.max(x0, Math.min(x1, nx));
-    const cz = Math.max(z0, Math.min(z1, nz));
-    const dx = nx - cx, dz = nz - cz;
+    const cx = Math.max(x0, Math.min(x1, fx));
+    const cz = Math.max(z0, Math.min(z1, fz));
+    const dx = fx - cx, dz = fz - cz;
     const d2 = dx * dx + dz * dz;
     if (d2 < r * r) {
-      if (d2 === 0) { nz = z0 - r; continue; }
+      if (d2 === 0) { fz = z0 - r; continue; }
       const d = Math.sqrt(d2);
-      nx = cx + dx / d * r; nz = cz + dz / d * r;
+      fx = cx + dx / d * r; fz = cz + dz / d * r;
     }
   }
-  return [nx, nz];
+  if (!inRegion(fx, fz)) { fx = nx; fz = nz; }  // 押し出しで範囲外に出る場合は押し出しなし
+  return [fx, fz];
 }
 
 const keys = {};
@@ -733,9 +761,12 @@ function renderLoop() {
     const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw); // 視線の前方ベクトル (一人称と共通)
     // 後ろ方向にどれだけ下がれるか: 歩行境界 (collide) の内側マージンまでの距離で決める。
     // 単純な座標クランプだと壁際でカメラがキャラの前に回り込むため、レイ方式にする
+    // v3.5: カメラの後退限界は、今いる側 (店内/庭) の壁までに合わせる
+    const camMinX = pos.x < -3.85 ? -10.55 : -3.75;
+    const camMaxX = pos.x < -3.85 ? -4.35 : 3.75;
     let tMax = D;
-    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x + 3.75) / fwdX);
-    else if (fwdX < -0.0001) tMax = Math.min(tMax, (3.75 - pos.x) / -fwdX);
+    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
+    else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
     if (fwdZ > 0.0001) tMax = Math.min(tMax, (pos.z + 3.3) / fwdZ);
     else if (fwdZ < -0.0001) tMax = Math.min(tMax, (3.15 - pos.z) / -fwdZ);
     let cx, cy, cz;
