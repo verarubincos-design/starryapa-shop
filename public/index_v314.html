@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>StarryApa みんなで歩けるお店</title>
+<meta property="og:title" content="StarryApa みんなで歩けるお店">
+<meta property="og:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://starryapa-shop.onrender.com/">
+<meta property="og:image" content="https://starryapa-shop.onrender.com/assets/og_town.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="StarryApa みんなで歩けるお店">
+<meta name="twitter:description" content="ブラウザで歩けて、チャットできる小さな3Dのお店。Starry Waltzが流れます。">
+<meta name="twitter:image" content="https://starryapa-shop.onrender.com/assets/og_town.jpg">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1214; font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; color: #f5ead9; }
+  button { font-family: inherit; cursor: pointer; }
+  input { font-family: inherit; }
+
+  /* ---------- ログイン / 登録 / ロビー ---------- */
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 35%, #3d2126 0%, #1a1214 70%); z-index: 50; padding: 16px; overflow-y: auto; }
+  .card { background: rgba(43, 26, 30, 0.95); border: 1px solid #7a4a52; border-radius: 16px; padding: 24px 22px; width: 100%; max-width: 380px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .card h1 { font-size: 20px; text-align: center; margin-bottom: 4px; color: #ffd9a0; }
+  .card .sub { text-align: center; font-size: 12px; color: #c9a8a0; margin-bottom: 18px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .tabs button { flex: 1; padding: 9px; border-radius: 9px; border: 1px solid #7a4a52; background: transparent; color: #c9a8a0; font-size: 14px; }
+  .tabs button.active { background: #7a2d3a; color: #fff; border-color: #a04a58; }
+  label { display: block; font-size: 13px; margin: 12px 0 4px; color: #f0d7c0; }
+  .hint { font-size: 11px; color: #b08d84; margin-top: 2px; }
+  input[type="text"], input[type="password"] { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid #7a4a52; background: #241417; color: #fff; font-size: 16px; }
+  .big-btn { width: 100%; padding: 12px; margin-top: 20px; border: none; border-radius: 10px; background: #a83a4a; color: #fff; font-size: 16px; font-weight: bold; }
+  .big-btn:hover { background: #bf4657; }
+  .ghost-btn { width: 100%; padding: 10px; margin-top: 10px; border: 1px solid #7a4a52; border-radius: 10px; background: transparent; color: #c9a8a0; font-size: 14px; }
+  .error { color: #ff9d9d; font-size: 13px; min-height: 18px; margin-top: 10px; text-align: center; }
+  .avatar-choices { display: flex; gap: 8px; margin-top: 6px; }
+  .avatar-choices button { flex: 1; padding: 9px 4px; border-radius: 9px; border: 2px solid #5a3a40; background: #241417; color: #e8cdb8; font-size: 14px; }
+  .avatar-choices button.active { border-color: #ffd9a0; background: #3d2126; }
+  .colors { display: flex; gap: 10px; margin-top: 8px; }
+  .colors button { width: 34px; height: 34px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+  .colors button.active { border-color: #fff; box-shadow: 0 0 0 2px #ffd9a0; }
+  .hidden { display: none !important; }
+
+  /* ---------- 部屋 ---------- */
+  #room { position: fixed; inset: 0; }
+  #room canvas { display: block; }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1a1214; z-index: 40; font-size: 15px; gap: 10px; }
+  .hud-btn { background: rgba(30, 18, 20, 0.78); color: #f5ead9; border: 1px solid rgba(255, 217, 160, 0.4); border-radius: 9px; padding: 7px 12px; font-size: 13px; }
+  #count { position: fixed; top: 10px; left: 10px; z-index: 20; background: rgba(30,18,20,0.78); border: 1px solid rgba(255,217,160,0.4); border-radius: 9px; padding: 6px 12px; font-size: 13px; }
+  #topRight { position: fixed; top: 10px; right: 10px; z-index: 20; display: flex; gap: 6px; }
+  #menuPanel { position: fixed; top: 52px; right: 10px; z-index: 21; display: flex; flex-direction: column; gap: 6px; background: rgba(30,18,20,0.92); border: 1px solid rgba(255,217,160,0.4); border-radius: 12px; padding: 10px; }
+  #helpCard { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); z-index: 22; width: min(92vw, 400px); background: rgba(30,18,20,0.94); border: 1px solid rgba(255,217,160,0.5); border-radius: 14px; padding: 16px 18px; font-size: 13px; line-height: 1.8; }
+  #helpCard h2 { font-size: 15px; color: #ffd9a0; margin-bottom: 6px; }
+  #helpCard button { margin-top: 10px; width: 100%; }
+  #chatLog { position: fixed; left: 10px; bottom: 64px; z-index: 15; width: min(78vw, 340px); max-height: 34vh; overflow-y: auto; background: rgba(20, 12, 14, 0.55); border-radius: 10px; padding: 8px 10px; font-size: 13px; line-height: 1.55; }
+  #chatLog .who { color: #ffd9a0; }
+  #chatBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 16; display: flex; gap: 6px; width: min(94vw, 520px); }
+  #chatInput { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,217,160,0.4); background: rgba(30,18,20,0.85); color: #fff; font-size: 16px; }
+  #chatSend { padding: 10px 16px; border-radius: 10px; border: none; background: #a83a4a; color: #fff; font-size: 14px; font-weight: bold; }
+  #emoteBar { position: fixed; right: 12px; bottom: 66px; z-index: 16; display: flex; flex-direction: column; gap: 6px; }
+  #emoteBar button { background: rgba(30, 18, 20, 0.78); color: #f5ead9; border: 1px solid rgba(255, 217, 160, 0.4); border-radius: 9px; padding: 8px 10px; font-size: 13px; text-align: left; }
+  #emoteBar button:active { background: #7a2d3a; }
+  #stick { position: fixed; left: 18px; bottom: 120px; z-index: 16; width: 104px; height: 104px; border-radius: 50%; background: rgba(255,255,255,0.16); border: 2px solid rgba(255,217,160,0.85); display: none; }
+  #stickKnob { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 50%; background: rgba(255,217,160,0.85); transform: translate(-50%, -50%); }
+  body.touch #stick { display: block; }
+  body.touch #chatLog { bottom: 240px; max-height: 24vh; }
+  #errBox { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(10,6,8,0.9); padding: 20px; text-align: center; font-size: 14px; line-height: 1.9; }
+</style>
+</head>
+<body>
+
+<!-- ログイン / 登録 -->
+<div id="authScreen" class="screen">
+  <div class="card">
+    <h1>StarryApa</h1>
+    <div class="sub">みんなで歩ける小さなお店（v3.14）</div>
+    <div class="tabs">
+      <button id="tabLogin" class="active">ログイン</button>
+      <button id="tabRegister">新規登録</button>
+    </div>
+    <div id="loginForm">
+      <label>ログインID</label>
+      <input type="text" id="loginId" autocomplete="username" placeholder="登録したログインID">
+      <label>パスワード</label>
+      <input type="password" id="loginPw" autocomplete="current-password">
+      <button class="big-btn" id="doLogin">ログイン</button>
+      <div class="error" id="loginError"></div>
+    </div>
+    <div id="registerForm" class="hidden">
+      <label>ログインID</label>
+      <input type="text" id="regId" autocomplete="username" placeholder="例：vera">
+      <div class="hint">ログインする時だけ使うもの。人には見えません</div>
+      <label>パスワード</label>
+      <input type="password" id="regPw" autocomplete="new-password">
+      <div class="hint">4文字以上なら何でもOKです</div>
+      <label>名前（カタカナ）</label>
+      <input type="text" id="regName" value="ベラ">
+      <div class="hint">部屋で頭の上に表示される、みんなに見える名前</div>
+      <label>アバター</label>
+      <div class="avatar-choices" id="avatarChoices">
+        <button data-type="vera" class="active">ベラ</button>
+        <button data-type="girl">女の子</button>
+        <button data-type="boy">男の子</button>
+      </div>
+      <label>色（ドレス／シャツ）</label>
+      <div class="colors" id="colorChoices">
+        <button data-color="violet" class="active" style="background:#8a6fc9" title="むらさき"></button>
+        <button data-color="red" style="background:#c23b47" title="あか"></button>
+        <button data-color="blue" style="background:#4070cc" title="あお"></button>
+        <button data-color="green" style="background:#4da653" title="みどり"></button>
+        <button data-color="yellow" style="background:#e6bf3f" title="きいろ"></button>
+      </div>
+      <button class="big-btn" id="doRegister">登録して入る</button>
+      <div class="error" id="regError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ロビー -->
+<div id="lobbyScreen" class="screen hidden">
+  <div class="card">
+    <h1>StarryApa</h1>
+    <div class="sub" id="lobbyInfo">ログイン中</div>
+    <button class="big-btn" id="doEnter">入室する</button>
+    <button class="ghost-btn" id="doLogout">ログアウト</button>
+  </div>
+</div>
+
+<!-- 部屋 -->
+<div id="room" class="hidden"></div>
+<div id="loading" class="hidden"><div>お部屋を準備しています…</div><div id="loadPct">0%</div></div>
+<div id="count" class="hidden">いま0人</div>
+<div id="topRight" class="hidden">
+  <button class="hud-btn" id="btnReset">入口にもどす</button>
+  <button class="hud-btn" id="btnMenu">☰ メニュー</button>
+</div>
+<div id="menuPanel" class="hidden">
+  <button class="hud-btn" id="btnMusic">🎵 音楽OFF</button>
+  <button class="hud-btn" id="btnView">📷 視点：一人称</button>
+  <button class="hud-btn" id="btnSaveLog">ログ保存</button>
+  <button class="hud-btn" id="btnToggleLog">ログを隠す</button>
+  <button class="hud-btn" id="btnHelp">ヘルプ</button>
+  <button class="hud-btn" id="btnLeave">退室する</button>
+  <button class="hud-btn" id="btnLogout2">ログアウト</button>
+</div>
+<div id="helpCard" class="hidden">
+  <h2>あそびかた</h2>
+  <div id="helpText"></div>
+  <button class="hud-btn" id="btnCloseHelp">とじる</button>
+</div>
+<div id="chatLog" class="hidden"></div>
+<div id="chatBar" class="hidden">
+  <input type="text" id="chatInput" placeholder="メッセージを入力" maxlength="200">
+  <button id="chatSend">送信</button>
+</div>
+<div id="emoteBar" class="hidden">
+  <button id="emoteRaise">🙋 手をあげる</button>
+  <button id="emoteJump">⤴ ジャンプ</button>
+  <button id="emoteBow">🙇 お辞儀</button>
+  <button id="emoteJoy">🙌 よろこぶ</button>
+</div>
+<audio id="bgm" loop preload="auto" src="assets/starry_waltz.mp3"></audio>
+<div id="stick"><div id="stickKnob"></div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ---------------- API ----------------
+const TOKEN_KEY = 'starryapa_token';
+const VIEW_KEY = 'starryapa_view';
+let token = localStorage.getItem(TOKEN_KEY) || null;
+let thirdPerson = localStorage.getItem(VIEW_KEY) === 'third'; // v3.4.3: 三人称視点 (既定は一人称)
+let me = null; // {loginId, displayName, avatarType, avatarColor, isHost}
+
+async function api(pathName, body) {
+  const r = await fetch(pathName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  let data = {};
+  try { data = await r.json(); } catch (e) {}
+  return { status: r.status, data };
+}
+async function apiAuth(pathName, body) {
+  const out = await api(pathName, Object.assign({ token }, body || {}));
+  if (out.data && out.data.authFailed) { forceToAuth(); throw new Error('auth'); }
+  return out;
+}
+function forceToAuth() {
+  stopRoomLoops();
+  token = null; me = null;
+  localStorage.removeItem(TOKEN_KEY);
+  show('authScreen');
+}
+
+// ---------------- 画面切替 ----------------
+const SCREENS = ['authScreen', 'lobbyScreen'];
+function show(id) {
+  for (const s of SCREENS) document.getElementById(s).classList.toggle('hidden', s !== id);
+  const inRoomUi = !id;
+  document.getElementById('room').classList.toggle('hidden', !inRoomUi);
+}
+function showLobby() {
+  show('lobbyScreen');
+  document.getElementById('lobbyInfo').textContent =
+    'ログイン中：' + me.displayName + '（' + ({ vera: 'ベラ', girl: '女の子', boy: '男の子' })[me.avatarType] + '）' + (me.isHost ? ' 店主' : '');
+}
+
+// ---------------- 認証UI ----------------
+let regType = 'vera', regColor = 'violet';
+const $ = id => document.getElementById(id);
+$('tabLogin').onclick = () => {
+  $('tabLogin').classList.add('active'); $('tabRegister').classList.remove('active');
+  $('loginForm').classList.remove('hidden'); $('registerForm').classList.add('hidden');
+};
+$('tabRegister').onclick = () => {
+  $('tabRegister').classList.add('active'); $('tabLogin').classList.remove('active');
+  $('registerForm').classList.remove('hidden'); $('loginForm').classList.add('hidden');
+};
+$('avatarChoices').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  regType = b.dataset.type;
+  for (const x of $('avatarChoices').children) x.classList.toggle('active', x === b);
+});
+$('colorChoices').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  regColor = b.dataset.color;
+  for (const x of $('colorChoices').children) x.classList.toggle('active', x === b);
+});
+$('doLogin').onclick = async () => {
+  $('loginError').textContent = '';
+  const { status, data } = await api('/api/login', { loginId: $('loginId').value, password: $('loginPw').value });
+  if (status !== 200) { $('loginError').textContent = data.error || 'ログインできませんでした'; return; }
+  token = data.token; me = data.account;
+  localStorage.setItem(TOKEN_KEY, token);
+  showLobby();
+};
+$('doRegister').onclick = async () => {
+  $('regError').textContent = '';
+  const { status, data } = await api('/api/register', {
+    loginId: $('regId').value, password: $('regPw').value,
+    displayName: $('regName').value, avatarType: regType, avatarColor: regColor
+  });
+  if (status !== 200) { $('regError').textContent = data.error || '登録できませんでした'; return; }
+  token = data.token; me = data.account;
+  localStorage.setItem(TOKEN_KEY, token);
+  showLobby();
+};
+async function doLogout() {
+  try { await api('/api/logout', { token }); } catch (e) {}
+  forceToAuth();
+}
+$('doLogout').onclick = doLogout;
+
+// ---------------- 3D ----------------
+const isTouch = matchMedia('(pointer: coarse)').matches;
+if (isTouch) document.body.classList.add('touch');
+let renderer, scene, camera, clock;
+let roomReady = false, inRoom = false;
+const dollScenes = {}; // type -> THREE.Object3D (original)
+const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
+const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
+const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb' };
+
+function showError(msg) {
+  let box = $('errBox');
+  if (!box) {
+    box = document.createElement('div'); box.id = 'errBox';
+    box.innerHTML = '<div><div id="errMsg"></div><br><button class="hud-btn" onclick="location.reload()">開き直す</button></div>';
+    document.body.appendChild(box);
+  }
+  $('errMsg').textContent = msg;
+}
+
+async function initRoom() {
+  if (roomReady) return;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: !isTouch, powerPreference: 'high-performance' });
+  } catch (e) {
+    showError('3D表示（WebGL）が使えませんでした。ブラウザを変えて開いてみてください。');
+    throw e;
+  }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.5 : 1.75));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = false;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  $('room').appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x2c3d63);   // v3.6: 薄暮ブルーの空 (ベラの希望で明るく)
+  camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.05, 100);
+  camera.rotation.order = 'YXZ';
+  clock = new THREE.Clock();
+
+  scene.add(new THREE.HemisphereLight(0xfff2e0, 0x40342a, 0.9));
+  scene.add(new THREE.AmbientLight(0xffe8c8, 0.4));
+  const pts = [
+    [-1.6, 2.3, -2.6], [3.0, 2.4, -0.6], [0.2, 2.3, 2.4], [-3.0, 2.2, 0.8]
+  ];
+  for (const p of pts) {
+    const L = new THREE.PointLight(0xffd9a0, 14, 9, 2);
+    L.position.set(p[0], p[1], p[2]);
+    scene.add(L);
+  }
+
+  const manager = new THREE.LoadingManager();
+  const loader = new GLTFLoader(manager);
+  const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+  const jobs = [
+    ['room', 'assets/starryapa_room.glb'],
+    ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
+  ];
+  let done = 0;
+  for (const [key, url] of jobs) {
+    const gltf = await load(url);
+    if (key === 'room') {
+      gltf.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = true; } });
+      scene.add(gltf.scene);
+    } else {
+      stripGroundPlanes(gltf.scene);
+      dollScenes[key] = gltf.scene;
+    }
+    done++;
+    $('loadPct').textContent = Math.round(done / jobs.length * 100) + '%';
+  }
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+  roomReady = true;
+}
+
+// ---------------- アバター ----------------
+function makeNameSprite(name, isHost) {
+  const c = document.createElement('canvas'); c.width = 384; c.height = 112;
+  const g = c.getContext('2d');
+  g.font = 'bold 46px sans-serif';
+  g.textBaseline = 'middle';
+  const nameW = g.measureText(name).width;
+  const tagW = isHost ? g.measureText('店主').width * 0.72 + 26 : 0;
+  let x = (384 - nameW - tagW) / 2;
+  if (isHost) {
+    const tw = g.measureText('店主').width * 0.72 + 22;
+    g.fillStyle = '#d9a83f';
+    g.beginPath(); g.roundRect(x, 30, tw, 52, 10); g.fill();
+    g.fillStyle = '#2a1a05'; g.font = 'bold 33px sans-serif';
+    g.fillText('店主', x + 11, 58);
+    g.font = 'bold 46px sans-serif';
+    x += tw + 8;
+  }
+  g.lineWidth = 8; g.strokeStyle = 'rgba(20,10,12,0.85)';
+  g.strokeText(name, x, 58);
+  g.fillStyle = '#fff';
+  g.fillText(name, x, 58);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sp.scale.set(1.3, 0.38, 1);
+  sp.position.y = 1.26;
+  sp.renderOrder = 900;
+  return sp;
+}
+
+function makeBubbleSprite(text) {
+  const font = '34px sans-serif';
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = font;
+  const maxW = 300;
+  const lines = [];
+  let line = '';
+  for (const ch of text) {
+    if (meas.measureText(line + ch).width > maxW && line) { lines.push(line); line = ch; }
+    else line += ch;
+    if (lines.length === 3) break;
+  }
+  if (line && lines.length < 3) lines.push(line);
+  const w = Math.max(...lines.map(l => meas.measureText(l).width)) + 36;
+  const h = lines.length * 44 + 30;
+  const c = document.createElement('canvas'); c.width = Math.ceil(w); c.height = Math.ceil(h) + 14;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.95)';
+  g.beginPath(); g.roundRect(1, 1, w - 2, h - 2, 16); g.fill();
+  g.beginPath();
+  g.moveTo(w / 2 - 10, h - 2); g.lineTo(w / 2 + 10, h - 2); g.lineTo(w / 2, h + 12); g.closePath(); g.fill();
+  g.font = font; g.fillStyle = '#262022'; g.textBaseline = 'top';
+  lines.forEach((l, i) => g.fillText(l, 18, 13 + i * 44));
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  const worldW = Math.max(0.55, w / 300);
+  sp.scale.set(worldW, worldW * c.height / c.width, 1);
+  sp.position.y = 1.46 + (worldW * c.height / c.width) / 2;
+  sp.renderOrder = 910;
+  return sp;
+}
+
+// 手をあげる用: 肩を支点に回す腕パーツ (GLB内の実ノード名・モデル座標)
+// vera は arm ノードが無く sleeve+hand のみ。座標は各モデルの肩位置 (モデル単位)
+const ARM_SPEC = {
+  vera: { parts: ['sleeve1', 'hand1'], pivot: [0.26, 1.16, 0.0] },
+  girl: { parts: ['sleeve1', 'arm1', 'hand1'], pivot: [0.25, 1.11, 0.0] },
+  boy: { parts: ['sleeve1', 'arm1', 'hand1'], pivot: [0.25, 1.11, 0.0] }
+};
+function findArmParts(inner, type) {
+  const spec = ARM_SPEC[type] || ARM_SPEC.vera;
+  const parts = [];
+  for (const name of spec.parts) {
+    const node = inner.getObjectByName(name);
+    if (!node) return []; // 揃わなければフォールバック (体の小さな揺れ) に回す
+    parts.push({ node, pos0: node.position.clone(), quat0: node.quaternion.clone() });
+  }
+  return { parts, pivot: new THREE.Vector3(spec.pivot[0], spec.pivot[1], spec.pivot[2]) };
+}
+// 左腕用 (よろこぶで両手を上げる)。ノード名は右の "…1" に対して "…-1"、支点は x 反転
+function findArmPartsL(inner, type) {
+  const spec = ARM_SPEC[type] || ARM_SPEC.vera;
+  const parts = [];
+  for (const name of spec.parts) {
+    const node = inner.getObjectByName(name.replace(/1$/, '-1'));
+    if (!node) return { parts: [], pivot: null }; // 揃わなければその腕は動かさない
+    parts.push({ node, pos0: node.position.clone(), quat0: node.quaternion.clone() });
+  }
+  return { parts, pivot: new THREE.Vector3(-spec.pivot[0], spec.pivot[1], spec.pivot[2]) };
+}
+
+// v3.4.1: 人形GLBに紛れ込んだ「地面プレーン」を読み込み時に取り除く。
+// vera_doll.glb には Blender 作業シーンの床 (30m×30m の Plane, 材質名 floor) が
+// 一緒に書き出されていて、そのままクローンするとアバターが部屋いっぱいの
+// 床シートを足元に抱え、エモートで床ごと動いて見えた。
+// 「横・奥行きが 5m 超で厚みほぼゼロ」の直下ノードだけを地面とみなして除去する
+// (人形の台座シリンダー等は 1.9m 幅なので残る)。
+function stripGroundPlanes(root) {
+  const kill = [];
+  for (const child of root.children) {
+    const b = new THREE.Box3().setFromObject(child);
+    if (b.isEmpty()) continue;
+    const sx = b.max.x - b.min.x, sy = b.max.y - b.min.y, sz = b.max.z - b.min.z;
+    if (sx > 5 && sz > 5 && sy < 0.1) kill.push(child);
+  }
+  for (const c of kill) root.remove(c);
+}
+
+function createAvatar(p, isSelf = false) {
+  const src = dollScenes[p.avatarType] || dollScenes.vera;
+  const inner = src.clone(true);
+  const target = RECOLOR_MAT[p.avatarType] || 'violet';
+  if (p.avatarColor !== 'violet' && COLOR_HEX[p.avatarColor]) {
+    const apply = m => {
+      if (m && m.name === target) { const nm = m.clone(); nm.color.setHex(COLOR_HEX[p.avatarColor]); return nm; }
+      return m;
+    };
+    inner.traverse(o => {
+      if (!o.isMesh || !o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map(apply) : apply(o.material);
+    });
+  }
+  const box = new THREE.Box3().setFromObject(inner);
+  const h = box.max.y - box.min.y;
+  const s = 1.0 / h;
+  inner.scale.setScalar(s);
+  inner.position.y = -box.min.y * s;
+  const group = new THREE.Group();
+  group.add(inner);
+  if (!isSelf) group.add(makeNameSprite(p.name, p.isHost)); // 自分のアバターには名前札・吹き出しを付けない
+  scene.add(group);
+  const arm = findArmParts(inner, p.avatarType);
+  const armL = findArmPartsL(inner, p.avatarType);
+  return {
+    group, inner, bubble: null, bubbleUntil: 0, playerName: p.name,
+    cur: { x: p.x, z: p.z, yaw: p.yaw }, tgt: { x: p.x, z: p.z, yaw: p.yaw },
+    armParts: arm.parts || [], armPivot: arm.pivot || null,
+    armPartsL: armL.parts || [], armPivotL: armL.pivot || null,
+    emote: null, lastEmoteAt: p.emoteAt || 0
+  };
+}
+
+// ---------------- ピンポン ----------------
+let audioCtx = null;
+function chime() {
+  // v3.4: 音量アップ + ピンポンを2回繰り返し、他の音に埋もれにくくした (2回目は少し小さく)
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    const strikes = [
+      [659.25, 0.00, 0.50], [523.25, 0.22, 0.50],
+      [659.25, 0.58, 0.38], [523.25, 0.80, 0.38]
+    ];
+    for (const [f, dt, peak] of strikes) {
+      const dur = 0.9;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + dt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + dur);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t0 + dt); o.stop(t0 + dt + dur + 0.05);
+      // 明るさを出すための倍音 (小さく)
+      const o2 = audioCtx.createOscillator(), g2 = audioCtx.createGain();
+      o2.type = 'sine'; o2.frequency.value = f * 2;
+      g2.gain.setValueAtTime(0.0001, t0 + dt);
+      g2.gain.exponentialRampToValueAtTime(peak * 0.18, t0 + dt + 0.01);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.4);
+      o2.connect(g2).connect(audioCtx.destination);
+      o2.start(t0 + dt); o2.stop(t0 + dt + 0.45);
+    }
+  } catch (e) {}
+}
+
+// ---------------- 自分の移動 ----------------
+const START = { x: -13.7, z: 0.6 };   // v3.7: 店の前の小道からスタート
+const pos = { x: START.x, z: START.z };
+let yaw = 0, pitch = 0;
+function lookAtStart() {
+  const dx = -4.2 - pos.x, dz = 0.6 - pos.z;   // 店の入口ドアを見る
+  yaw = Math.atan2(-dx, -dz);
+  pitch = Math.atan2(1.3 - 1.5, Math.hypot(dx, dz));
+}
+lookAtStart();
+
+const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
+  [-2.6, -0.5, -3.45, -2.2],   // アルコーブのデイベッド
+  [3.1, 3.95, -3.45, 1.0],     // キッチンカウンター
+  [-4.2, -1.2, 1.05, 1.25],    // 間仕切り
+  [-1.0, 1.2, 2.45, 3.35],     // ソファ
+  [-0.3, 0.6, 1.7, 2.3],       // コーヒーテーブル
+  [1.6, 2.3, 1.85, 2.55],      // アームチェア
+  // v3.5: 外エリアの障害物
+  [-4.78, -4.26, 1.28, 1.96],  // プランター (ドア北側)
+  [-4.78, -4.26, -0.76, -0.08],// プランター (ドア南側)
+  [-5.1, -4.15, 1.9, 2.8],     // 植え込み (北)
+  [-5.1, -4.15, -2.0, -1.1],   // 植え込み (中央)
+  [-5.1, -4.15, -3.2, -2.3],   // 植え込み (南)
+  [-5.74, -5.5, -0.7, -0.46],  // ポーチ柱 (南)
+  [-5.74, -5.5, 1.66, 1.9],    // ポーチ柱 (北)
+  [-7.02, -6.78, 1.73, 1.97],  // ランプ柱
+  [-8.82, -8.58, -0.77, -0.53], // ランプ柱
+  // v3.7: 小道の街灯は歩行範囲の外に立つので柱ボックス不要
+  // v3.9: 芝生も歩ける分、柵と建物と公園の物を守る
+  [-10.75, -10.45, -3.45, -0.25], // 木柵 (門の南側)
+  [-10.75, -10.45, 1.45, 3.45],   // 木柵 (門の北側)
+  [-10.4, -4.1, 3.4, 3.7],        // 庭の北の生け垣
+  [-10.4, -4.1, -3.7, -3.4],      // 庭の南の生け垣
+  [-9.5, -5.3, 9.6, 13.4],        // ポクテハウスの建物 (v3.12)
+  [-10.27, -10.03, 12.53, 12.77], // ポクテハウスの看板の柱
+  [-9.8, -5.05, -13.25, -9.75],   // はに茶屋の建物
+  [-10.75, -10.15, 12.85, 15.2],  // ポクテハウス/銀の湯の前の生け垣
+  [-10.75, -10.15, 7.8, 10.15],
+  [-10.75, -10.15, -15.2, -12.85], // はに茶屋の前の生け垣
+  [-10.75, -10.15, -10.15, -7.8],
+  [-10.15, -9.65, -12.35, -11.85], // はに茶屋の石灯籠
+  [-25.2, -21.8, -2.3, 1.1],       // 公園の噴水
+  [-26.9, -26.4, -1.05, -0.15],    // ベンチ (西)
+  [-24.0, -23.0, -4.05, -3.45],    // ベンチ (北)
+  [-24.0, -23.0, 2.25, 2.85],      // ベンチ (南)
+  [-20.3, -18.7, 2.6, 4.2],        // 花壇
+  [-20.3, -18.7, -5.4, -3.8],
+  [-28.3, -26.7, 2.4, 4.0],
+  [-28.3, -26.7, -5.2, -3.6],
+  // 木の幹 (公園と小道沿い)
+  [-19.17, -18.83, 5.83, 6.17], [-20.67, -20.33, -5.67, -5.33],
+  [-26.17, -25.83, 4.83, 5.17], [-27.67, -27.33, -6.67, -6.33],
+  [-19.67, -19.33, -12.17, -11.83], [-25.17, -24.83, 12.33, 12.67],
+  [-28.17, -27.83, 0.83, 1.17], [-21.17, -20.83, 12.83, 13.17],
+  [-28.67, -28.33, -12.17, -11.83], [-18.67, -18.33, 11.83, 12.17],
+  [-16.57, -16.23, 6.83, 7.17], [-16.57, -16.23, 2.33, 2.67],
+  [-16.57, -16.23, -3.67, -3.33], [-16.57, -16.23, -8.17, -7.83],
+  [-16.57, -16.23, -13.67, -13.33], [-16.57, -16.23, 13.33, 13.67],
+  // v3.10: ミアんちと小道の北の延長
+  [-9.8, -5.05, -26.85, -20.15],   // ミアんちの建物
+  [-10.75, -10.15, -27.2, -24.85], // ミアんちの前の生け垣
+  [-10.75, -10.15, -22.15, -19.8],
+  [-10.42, -9.72, -25.26, -24.34], // クレーンゲーム機
+  [-6.17, -5.83, -26.07, -25.73],  // ミアんちの木の幹
+  [-16.10, -13.30, -30.08, -29.72], // 小道の北の突き当たりの生け垣
+  [-16.57, -16.23, -19.67, -19.33], [-16.57, -16.23, -26.17, -25.83],
+  // v3.11: Bar AQUA（ミアんちの向かい・西側）
+  [-23.0, -18.6, -26.7, -20.3],   // Bar AQUAの建物
+  [-17.99, -17.51, -25.95, -24.85], [-17.99, -17.51, -27.15, -26.05], // 前の生け垣
+  [-17.99, -17.51, -22.15, -21.05], [-17.99, -17.51, -20.95, -19.85],
+  [-18.77, -17.53, -26.27, -25.03], // タヌキのオブジェ
+  [-18.46, -17.94, -21.36, -20.84], // 花のプランター
+  // v3.12: 銀の湯の移設先（南の奥）と小道の南の延長
+  [-9.8, -5.05, 21.65, 25.45],    // 銀の湯の建物（移設先）
+  [-10.75, -10.15, 24.85, 27.2],  // 銀の湯の前の生け垣
+  [-10.75, -10.15, 19.8, 22.15],
+  [-16.10, -13.30, 29.72, 30.08], // 小道の南の突き当たりの生け垣
+  [-16.57, -16.23, 19.33, 19.67], [-16.57, -16.23, 25.83, 26.17],
+  // v3.12: 学校の校舎（Bar AQUAの裏）
+  [-29.8, -24.2, -29.0, -18.0],   // 学校の校舎
+  [-29.4, -28.4, -16.98, -16.62], // 学校の前の生け垣
+  [-25.6, -24.6, -16.98, -16.62],
+  [-29.57, -29.23, -15.77, -15.43], // 学校の木の幹
+  [-24.77, -24.43, -15.77, -15.43],
+  // v3.13: スター商店街（銀の湯の前から西へ伸びる道と小店舗4軒＋アーチ看板）
+  [-21.2, -17.4, 18.35, 21.45],   // 花屋の建物
+  [-27.2, -23.4, 18.35, 21.45],   // 八百屋の建物
+  [-21.2, -17.4, 25.55, 28.65],   // ゲーセンの建物
+  [-27.2, -23.4, 25.55, 28.65],   // 服屋の建物
+  [-20.85, -17.75, 21.9, 22.6],   // 花屋の店先の花スタンド
+  [-26.85, -23.75, 21.9, 22.6],   // 八百屋の店先の木箱
+  [-20.8, -19.8, 24.4, 25.2],     // ゲーセンのクレーンゲーム
+  [-18.62, -17.98, 24.54, 25.06], // ゲーセンのゲーム機
+  [-26.15, -24.45, 24.72, 24.88], // 服屋の洋服ラック
+  [-24.05, -23.15, 24.5, 25.1],   // 服屋の台
+  [-19.44, -19.16, 25.01, 25.29], // 商店街の街灯（南）
+  [-25.44, -25.16, 21.66, 21.94], // 商店街の街灯（北）
+  [-14.44, -14.16, 25.01, 25.29], // アーチの柱（南）
+  [-14.44, -14.16, 21.71, 21.99], // アーチの柱（北）
+  [-30.25, -29.65, 22.0, 25.0]    // 商店街の突き当たりの生け垣
+];
+// v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
+// 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
+const REGIONS = [
+  [-3.9, 3.9, -3.45, 3.3],     // 店内
+  [-10.3, -4.02, -3.3, 3.3],   // 庭 (外エリア)
+  [-4.35, -3.85, 0.02, 1.18],  // 出入口の通り道
+  // v3.7: 門から小道への横断 (木柵は門の所だけ抜けられる)
+  [-13.3, -10.05, -0.25, 1.45],
+  // v3.7: ゆるく曲がる小道 (短い帯のつながりで近似)
+  [-13.75, -11.25, -11, -7.7],
+  [-13.90, -11.40, -8.3, -4.7],
+  [-14.27, -11.77, -5.3, -1.7],
+  [-14.76, -12.26, -2.3, 1.3],
+  [-15.28, -12.78, 0.7, 4.3],
+  [-15.70, -13.20, 3.7, 7.3],
+  [-15.93, -13.43, 6.7, 9.8],
+  [-15.94, -13.44, 9.2, 11],
+  // v3.8: 小道を両隣の先まで延長
+  [-13.85, -11.35, -14.3, -10.7],
+  [-14.17, -11.67, -17, -13.7],
+  [-15.85, -13.35, 10.7, 14.3],
+  [-15.53, -13.03, 13.7, 17],
+  // v3.8: 両隣の玄関前 (外観のみ・中には入れない)
+  [-13.6, -9.55, 10.9, 12.1],   // 銀の湯の前
+  [-13.6, -9.55, -11.05, -9.85], // はに茶屋の前
+  // v3.9: 緑の地面 (芝生) は全部歩ける。建物・柵・噴水などは BOXES 側で守る
+  // v3.10: 芝生をミアんちの先まで拡張
+  [-29.9, -4.02, -31.0, 31.0]
+];
+function inRegion(x, z) {
+  const E = 1e-6;
+  for (const [a, b, c, d] of REGIONS) if (x >= a - E && x <= b + E && z >= c - E && z <= d + E) return true;
+  return false;
+}
+function collide(nx, nz) {
+  // 範囲外に出る移動は、軸ごとに滑らせる (壁沿いに進めるように)
+  if (!inRegion(nx, nz)) {
+    if (inRegion(nx, pos.z)) nz = pos.z;
+    else if (inRegion(pos.x, nz)) nx = pos.x;
+    else { nx = pos.x; nz = pos.z; }
+  }
+  const r = 0.3;
+  let fx = nx, fz = nz;
+  for (const [x0, x1, z0, z1] of BOXES) {
+    const cx = Math.max(x0, Math.min(x1, fx));
+    const cz = Math.max(z0, Math.min(z1, fz));
+    const dx = fx - cx, dz = fz - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < r * r) {
+      if (d2 === 0) { fz = z0 - r; continue; }
+      const d = Math.sqrt(d2);
+      fx = cx + dx / d * r; fz = cz + dz / d * r;
+    }
+  }
+  if (!inRegion(fx, fz)) { fx = nx; fz = nz; }  // 押し出しで範囲外に出る場合は押し出しなし
+  return [fx, fz];
+}
+
+const keys = {};
+let chatFocused = false;
+addEventListener('keydown', e => {
+  if (chatFocused) return;
+  keys[e.code] = true;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// マウス視点 (ドラッグで見回す)
+let dragging = false, lastPX = 0, lastPY = 0;
+document.addEventListener('mousemove', e => {
+  if (!inRoom || !dragging) return;
+  if (e.buttons === 0) { dragging = false; return; }
+  yaw -= (e.clientX - lastPX) * 0.005;
+  pitch -= (e.clientY - lastPY) * 0.005;
+  pitch = Math.max(-1.1, Math.min(1.1, pitch));
+  lastPX = e.clientX; lastPY = e.clientY;
+});
+addEventListener('blur', () => { dragging = false; });
+addEventListener('keydown', e => { if (e.code === 'Escape') dragging = false; });
+
+// ジョイスティック
+const stickVec = { x: 0, y: 0 };
+let stickId = null;
+function setupTouchControls() {
+  const stick = $('stick'), knob = $('stickKnob');
+  const cv = renderer.domElement;
+  cv.addEventListener('pointerdown', e => {
+    if (!inRoom || isTouch) return;
+    dragging = true; lastPX = e.clientX; lastPY = e.clientY;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener('pointerup', () => { dragging = false; });
+  cv.addEventListener('pointercancel', () => { dragging = false; });
+  addEventListener('pointerup', () => { dragging = false; });
+  // タッチ視点ドラッグ (スティック以外)
+  let lookId = null, lx = 0, ly = 0;
+  cv.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) {
+      if (lookId === null) { lookId = t.identifier; lx = t.clientX; ly = t.clientY; }
+    }
+  }, { passive: true });
+  cv.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === lookId) {
+        yaw -= (t.clientX - lx) * 0.006;
+        pitch -= (t.clientY - ly) * 0.006;
+        pitch = Math.max(-1.1, Math.min(1.1, pitch));
+        lx = t.clientX; ly = t.clientY;
+      }
+    }
+  }, { passive: true });
+  cv.addEventListener('touchend', e => {
+    for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null;
+  });
+  stick.addEventListener('touchstart', e => {
+    const t = e.changedTouches[0]; stickId = t.identifier; e.preventDefault();
+  }, { passive: false });
+  addEventListener('touchmove', e => {
+    if (stickId === null) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier !== stickId) continue;
+      const r = stick.getBoundingClientRect();
+      let dx = t.clientX - (r.left + r.width / 2);
+      let dy = t.clientY - (r.top + r.height / 2);
+      const d = Math.hypot(dx, dy), max = 36;
+      if (d > max) { dx = dx / d * max; dy = dy / d * max; }
+      stickVec.x = dx / max; stickVec.y = dy / max;
+      knob.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))';
+    }
+  }, { passive: true });
+  addEventListener('touchend', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) {
+        stickId = null; stickVec.x = 0; stickVec.y = 0;
+        knob.style.transform = 'translate(-50%, -50%)';
+      }
+    }
+  });
+}
+
+// ---------------- 同期 ----------------
+const remotes = new Map();
+let selfAvatar = null; // v3.4.3: 三人称視点用の自分のアバター (createAvatar と同じ形のレコード)
+let knownIds = null;
+const welcomed = new Map(); // id -> joinedAt (ドアベルを鳴らした入室の記録)
+let hbTimer = null, plTimer = null, msgTimer = null, rafId = null;
+let lastMsgId = 0;
+const sessionLog = [];
+const seenMsgIds = new Set();   // チャット欄に表示済みのメッセージid
+const loggedMsgIds = new Set(); // ログ保存用に記録済みのメッセージid
+const pendingOwn = [];          // 送信中でサーバー未確定の自分の発言 {text}
+
+async function pollPlayers() {
+  const { data } = await apiAuth('/api/players', {});
+  const list = data.players || [];
+  $('count').textContent = 'いま' + (list.length + 1) + '人';
+  const seen = new Set();
+  const firstPoll = knownIds === null;
+  let joined = false;
+  for (const p of list) {
+    seen.add(p.id);
+    // ドアベルは「新しい入室 (joinedAt が新しい)」の時だけ鳴らす。
+    // 一時的に見えなくなって戻ってきただけ (同じ joinedAt) では鳴らさない
+    if (welcomed.get(p.id) !== p.joinedAt) {
+      welcomed.set(p.id, p.joinedAt);
+      if (!firstPoll) joined = true;
+    }
+    const r = remotes.get(p.id);
+    if (r) {
+      r.tgt.x = p.x; r.tgt.z = p.z; r.tgt.yaw = p.yaw;
+      if (p.emote && p.emoteAt && p.emoteAt !== r.lastEmoteAt) {
+        r.lastEmoteAt = p.emoteAt;
+        restoreArm(r); // 前の「手をあげる」が途中でも腕を戻してから次へ
+        r.emote = { name: p.emote, t0: performance.now() };
+      }
+    }
+    else remotes.set(p.id, createAvatar(p));
+  }
+  for (const [id, r] of remotes) {
+    if (!seen.has(id)) { scene.remove(r.group); remotes.delete(id); }
+  }
+  if (joined) chime();
+  knownIds = seen;
+}
+
+function logOnce(m) {
+  if (m && m.id && !loggedMsgIds.has(m.id)) { loggedMsgIds.add(m.id); sessionLog.push(m); }
+}
+async function pollMessages() {
+  const { data } = await apiAuth('/api/messages', { sinceId: lastMsgId });
+  for (const m of data.messages || []) {
+    lastMsgId = Math.max(lastMsgId, m.id);
+    logOnce(m);
+    if (seenMsgIds.has(m.id)) continue; // 即時表示済みの自分の発言など
+    seenMsgIds.add(m.id);
+    if (me && m.from === me.loginId) {
+      // 自分の発言がポーリングで戻ってきた: 楽観表示と一致したら二重表示しない
+      const pend = pendingOwn.find(p => p.text === m.text);
+      if (pend) continue;
+    }
+    appendChat(m);
+    if (me && m.from !== me.loginId) showBubbleFor(m);
+  }
+}
+function appendChat(m) {
+  const log = $('chatLog');
+  const div = document.createElement('div');
+  const who = document.createElement('span'); who.className = 'who'; who.textContent = m.name + '：';
+  div.appendChild(who);
+  div.appendChild(document.createTextNode(m.text));
+  log.appendChild(div);
+  while (log.children.length > 20) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+function showBubbleFor(m) {
+  if (m.from && remotes.has(m.from)) { setBubble(remotes.get(m.from), m.text); return; }
+  for (const r of remotes.values()) {
+    if (r.playerName === m.name) { setBubble(r, m.text); return; }
+  }
+}
+function setBubble(r, text) {
+  if (r.bubble) { r.group.remove(r.bubble); r.bubble.material.map.dispose(); r.bubble.material.dispose(); }
+  r.bubble = makeBubbleSprite(text);
+  r.group.add(r.bubble);
+  r.bubbleUntil = performance.now() + 4000;
+}
+
+function renderLoop() {
+  rafId = requestAnimationFrame(renderLoop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  // 移動
+  let mx = 0, mz = 0;
+  const fwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const sin = Math.sin(yaw), cos = Math.cos(yaw);
+  mx = (-sin * fwd + cos * str);
+  mz = (-cos * fwd - sin * str);
+  const len = Math.hypot(mx, mz);
+  if (len > 0.01) {
+    const sp = 2.3 * dt / Math.max(1, len);
+    const [nx, nz] = collide(pos.x + mx * sp, pos.z + mz * sp);
+    pos.x = nx; pos.z = nz;
+  }
+  const now = performance.now();
+  if (thirdPerson) {
+    // v3.4.3: 三人称カメラ。自キャラの後ろ (視線方向の逆) に回り込んで後ろ姿を見る。
+    // 三人称では視点演出 (跳ね・見下ろし) は付けない。人形の動き自体が見えるのが手応えになる
+    myEmote = null;
+    const D = 1.8;                                     // キャラからの距離
+    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw); // 視線の前方ベクトル (一人称と共通)
+    // 後ろ方向にどれだけ下がれるか: 歩行境界 (collide) の内側マージンまでの距離で決める。
+    // 単純な座標クランプだと壁際でカメラがキャラの前に回り込むため、レイ方式にする
+    // v3.5: カメラの後退限界は、今いる側 (店内/庭) の壁までに合わせる
+    const camMinX = pos.x < -3.85 ? -30.4 : -3.75;
+    const camMaxX = pos.x < -3.85 ? -4.35 : 3.75;
+    // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
+    // v3.9: 公園の西端・芝生の端まで広げる
+    const camMinZ = pos.x < -3.85 ? -31.6 : -3.3;
+    const camMaxZ = pos.x < -3.85 ? 31.6 : 3.15;
+    let tMax = D;
+    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
+    else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
+    if (fwdZ > 0.0001) tMax = Math.min(tMax, (pos.z - camMinZ) / fwdZ);
+    else if (fwdZ < -0.0001) tMax = Math.min(tMax, (camMaxZ - pos.z) / -fwdZ);
+    let cx, cy, cz;
+    if (tMax >= 0.3) {
+      const camDist = Math.max(0.3, tMax);
+      cx = pos.x - fwdX * camDist; cz = pos.z - fwdZ * camDist;
+      cy = 1.45 - pitch * 0.8;                       // pitch (見上げ/見下ろし) でカメラの高さが少し動く
+    } else {
+      // 背後に壁が近すぎる時は、ほぼ真上から見下ろす形にする (キャラが画面外に消えないように)
+      const back = Math.max(0, tMax);
+      cx = pos.x - fwdX * back; cz = pos.z - fwdZ * back;
+      cy = 2.1;
+    }
+    camera.position.set(cx, cy, cz);
+    // キャラの少し上・少し前を見る
+    camera.lookAt(pos.x + fwdX * 0.4, 0.95 + pitch * 0.5, pos.z + fwdZ * 0.4);
+  } else {
+    // v3.4.2: 自分のエモートの視点フィードバック (v3.4 仕様。本人の希望で復活)。
+    // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
+    // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
+    // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
+    let camY = 1.5, camPitch = pitch, camYaw = yaw;
+    if (myEmote) {
+      const t = (now - myEmote.t0) / 1000;
+      if (myEmote.name === 'jump') {
+        if (t >= 0.45) myEmote = null;
+        else camY += 0.25 * Math.sin(Math.PI * t / 0.45); // 人形の跳ね (emoteFrame) と同じ弧
+      } else if (myEmote.name === 'bow') {
+        if (t >= 1.0) myEmote = null;
+        else camPitch -= THREE.MathUtils.degToRad(20) * Math.sin(Math.PI * t / 1.0); // 見下ろし
+      } else if (myEmote.name === 'joy') {
+        if (t >= 1.6) myEmote = null;
+        else camYaw = yaw + Math.PI * 2 * (t / 1.6); // 自分もその場で1周回る
+      } else myEmote = null;
+    }
+    camera.position.set(pos.x, camY, pos.z);
+    camera.rotation.set(camPitch, camYaw, 0);
+  }
+  // 自分のアバター: 三人称の時だけ表示し、自分の位置・向き・エモートをそのまま反映する。
+  // 向きは リモートと同じ式 (yaw + π) — モデルの正面 (+Z) が視線方向を向くので、
+  // 後ろに置いたカメラからは後ろ姿が見える
+  if (selfAvatar) {
+    selfAvatar.group.visible = thirdPerson;
+    const sfx = emoteFrame(selfAvatar, now);
+    selfAvatar.group.position.set(pos.x, sfx.yOff, pos.z);
+    selfAvatar.group.rotation.y = yaw + Math.PI;
+    selfAvatar.inner.rotation.x = sfx.bowX;
+    selfAvatar.inner.rotation.z = sfx.rockZ;
+    selfAvatar.inner.rotation.y = sfx.spinY;
+  }
+  // リモート補間 + エモート
+  for (const r of remotes.values()) {
+    r.cur.x += (r.tgt.x - r.cur.x) * 0.18;
+    r.cur.z += (r.tgt.z - r.cur.z) * 0.18;
+    let dy = r.tgt.yaw - r.cur.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    r.cur.yaw += dy * 0.18;
+    const fx = emoteFrame(r, now);
+    r.group.position.set(r.cur.x, fx.yOff, r.cur.z);
+    r.group.rotation.y = r.cur.yaw + Math.PI;
+    r.inner.rotation.x = fx.bowX;
+    r.inner.rotation.z = fx.rockZ;
+    r.inner.rotation.y = fx.spinY;
+    if (r.bubble && now > r.bubbleUntil) {
+      r.group.remove(r.bubble); r.bubble = null;
+    }
+  }
+  // NPC (v3.14): 街の住人の自律行動
+  updateNpcs(now, dt);
+  renderer.render(scene, camera);
+}
+
+// エモートの進行度から、その人の今のオフセットを計算する (手続き的モーション)
+// 戻り値: {yOff, bowX, rockZ}。終わったら r.emote を片付ける
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+function emoteFrame(r, now) {
+  const out = { yOff: 0, bowX: 0, rockZ: 0, spinY: 0 };
+  if (!r.emote) return out;
+  const t = (now - r.emote.t0) / 1000;
+  const name = r.emote.name;
+  if (name === 'jump') {
+    if (t >= 0.45) { r.emote = null; return out; }
+    out.yOff = 0.25 * Math.sin(Math.PI * t / 0.45);
+  } else if (name === 'bow') {
+    if (t >= 1.0) { r.emote = null; return out; }
+    // 体全体を前 (ローカル+Z) へ傾ける。inner の回転なので向き (yaw+π) の影響を受けない
+    out.bowX = THREE.MathUtils.degToRad(28) * Math.sin(Math.PI * t / 1.0);
+  } else if (name === 'raise') {
+    if (t >= 1.2) { restoreArm(r); r.emote = null; return out; }
+    let k;
+    if (t < 0.25) { const u = t / 0.25; k = 1 - (1 - u) * (1 - u); }
+    else if (t < 0.9) k = 1;
+    else k = 1 - (t - 0.9) / 0.3;
+    if (r.armParts.length && r.armPivot) {
+      let ang = THREE.MathUtils.degToRad(135) * k;
+      if (t >= 0.25 && t < 0.9) ang += Math.sin((t - 0.25) * 14) * 0.09; // 挙げた手を小さく振る
+      applyArmRaise(r, ang);
+    } else {
+      // 腕パーツが無いモデル用のフォールバック: 体を小さく左右に揺らす
+      out.rockZ = Math.sin(t * 10) * 0.12 * k;
+      out.yOff = Math.abs(Math.sin(t * 10)) * 0.03 * k;
+    }
+  } else if (name === 'joy') {
+    // よろこぶ: 両手を2回上げ下げしながら、その場で1周回る (1.6秒)
+    if (t >= 1.6) { restoreArm(r); r.emote = null; return out; }
+    out.spinY = Math.PI * 2 * (t / 1.6);
+    const f = (1 - Math.cos(Math.PI * 4 * t / 1.6)) / 2; // 0→1→0→1→0
+    const ang = THREE.MathUtils.degToRad(140) * f;
+    if (r.armParts.length && r.armPivot) applyArmRaise(r, ang);
+    if (r.armPartsL && r.armPartsL.length && r.armPivotL) applyArmRaiseL(r, ang);
+    if (!r.armParts.length && !(r.armPartsL && r.armPartsL.length)) {
+      out.rockZ = Math.sin(t * 10) * 0.12; // フォールバック: 体を揺らす (回転はする)
+    }
+  }
+  return out;
+}
+function applyArmRaise(r, ang) {
+  const q = new THREE.Quaternion().setFromAxisAngle(Z_AXIS, ang);
+  const tmp = new THREE.Vector3();
+  for (const part of r.armParts) {
+    tmp.copy(part.pos0).sub(r.armPivot).applyQuaternion(q).add(r.armPivot);
+    part.node.position.copy(tmp);
+    part.node.quaternion.copy(q).multiply(part.quat0);
+  }
+}
+function applyArmRaiseL(r, ang) {
+  const q = new THREE.Quaternion().setFromAxisAngle(Z_AXIS, -ang); // 左腕は鏡像なので符号反転
+  const tmp = new THREE.Vector3();
+  for (const part of r.armPartsL) {
+    tmp.copy(part.pos0).sub(r.armPivotL).applyQuaternion(q).add(r.armPivotL);
+    part.node.position.copy(tmp);
+    part.node.quaternion.copy(q).multiply(part.quat0);
+  }
+}
+function restoreArm(r) {
+  for (const part of r.armParts) {
+    part.node.position.copy(part.pos0);
+    part.node.quaternion.copy(part.quat0);
+  }
+  if (r.armPartsL) for (const part of r.armPartsL) {
+    part.node.position.copy(part.pos0);
+    part.node.quaternion.copy(part.quat0);
+  }
+}
+
+function startRoomLoops() {
+  hbTimer = setInterval(() => { apiAuth('/api/heartbeat', { x: pos.x, z: pos.z, yaw }).catch(() => {}); }, 250);
+  plTimer = setInterval(() => { pollPlayers().catch(() => {}); }, 300);
+  msgTimer = setInterval(() => { pollMessages().catch(() => {}); }, 600);
+  pollPlayers().catch(() => {});
+  pollMessages().catch(() => {});
+  rafId = requestAnimationFrame(renderLoop);
+}
+function stopRoomLoops() {
+  inRoom = false;
+  clearInterval(hbTimer); clearInterval(plTimer); clearInterval(msgTimer);
+  if (rafId) cancelAnimationFrame(rafId);
+  hbTimer = plTimer = msgTimer = rafId = null;
+}
+
+// ---------------- BGM (Starry Waltz) ----------------
+const bgmEl = $('bgm');
+let musicOn = false;
+function setMusic(on) {
+  musicOn = on;
+  $('btnMusic').textContent = on ? '🎵 音楽ON' : '🎵 音楽OFF';
+  if (on) { bgmEl.volume = 0.22; bgmEl.play().catch(() => {}); }
+  else bgmEl.pause();
+}
+$('btnMusic').onclick = () => { setMusic(!musicOn); $('menuPanel').classList.add('hidden'); };
+
+// ---------------- 視点切替 (v3.4.3) ----------------
+function setView(third, save = true) {
+  thirdPerson = third;
+  if (save) localStorage.setItem(VIEW_KEY, third ? 'third' : 'first');
+  $('btnView').textContent = third ? '📷 視点：三人称' : '📷 視点：一人称';
+  if (selfAvatar) selfAvatar.group.visible = third && inRoom;
+}
+$('btnView').onclick = () => {
+  myEmote = null; // 切替の瞬間に視点演出が残らないように
+  setView(!thirdPerson);
+  $('menuPanel').classList.add('hidden');
+};
+setView(thirdPerson, false); // 保存済みの選択をボタンの表示に反映 (既定は一人称)
+
+// 自分のアバターを用意する (リモートと同じ生成経路。名前札なし)
+function ensureSelfAvatar() {
+  if (selfAvatar || !me) return;
+  selfAvatar = createAvatar(
+    { avatarType: me.avatarType, avatarColor: me.avatarColor, name: me.displayName, isHost: me.isHost, x: pos.x, z: pos.z, yaw, emoteAt: 0 },
+    true
+  );
+  selfAvatar.group.visible = thirdPerson;
+}
+
+// ---------------- NPC (v3.14): 街の住人 ----------------
+// サーバーとは通信せず、各クライアントの中で自律的に動く (見る人ごとに位置は少し違う)。
+// 訪問者よりひと回り小さく (0.8倍)、決まった範囲をうろうろ歩き、ときどき勝手にエモートする
+const npcs = [];
+const NPC_DEFS = [
+  { avatarType: 'girl', avatarColor: 'red',    home: { x: -19.6, z: 23.3 }, r: 1.5 },  // 商店街・花屋の前
+  { avatarType: 'boy',  avatarColor: 'green',  home: { x: -17.9, z: 23.7 }, r: 1.3 },  // 商店街・ゲーセンの前
+  { avatarType: 'girl', avatarColor: 'blue',   home: { x: -16.2, z: 23.4 }, r: 1.1 },  // 商店街・アーチのそば
+  { avatarType: 'girl', avatarColor: 'yellow', home: { x: -21.3, z: -0.4 }, r: 2.0 },  // 公園・噴水のそば
+  { avatarType: 'boy',  avatarColor: 'yellow', home: { x: -25.5, z: 6.0 },  r: 2.2 },  // 公園の西側
+];
+function ensureNpcs() {
+  if (npcs.length) return;
+  const now = performance.now();
+  for (const d of NPC_DEFS) {
+    const n = createAvatar(
+      { avatarType: d.avatarType, avatarColor: d.avatarColor, name: '', isHost: false, x: d.home.x, z: d.home.z, yaw: Math.random() * Math.PI * 2, emoteAt: 0 },
+      true
+    );
+    n.group.scale.setScalar(0.8);
+    n.home = d.home; n.homeR = d.r;
+    n.faceYaw = n.cur.yaw;
+    n.state = 'idle';
+    n.waitUntil = now + 1000 + Math.random() * 3000;
+    n.nextEmoteAt = now + 5000 + Math.random() * 12000;
+    n.tx = d.home.x; n.tz = d.home.z;
+    n.stuckAt = 0; n.lastX = d.home.x; n.lastZ = d.home.z;
+    npcs.push(n);
+  }
+}
+const NPC_EMOTES = ['raise', 'raise', 'joy', 'bow', 'joy', 'jump'];
+function npcTargetOk(x, z) {
+  if (!inRegion(x, z)) return false;
+  for (const [x0, x1, z0, z1] of BOXES) {
+    if (x > x0 - 0.35 && x < x1 + 0.35 && z > z0 - 0.35 && z < z1 + 0.35) return false;
+  }
+  return true;
+}
+function updateNpcs(now, dt) {
+  for (const n of npcs) {
+    let bob = 0;
+    if (n.state === 'idle') {
+      if (now >= n.nextEmoteAt && !n.emote) {
+        n.emote = { name: NPC_EMOTES[(Math.random() * NPC_EMOTES.length) | 0], t0: now };
+        n.faceYaw = Math.random() * Math.PI * 2; // エモートのたびに適当な方を向く
+        n.nextEmoteAt = now + 9000 + Math.random() * 14000;
+      }
+      if (now >= n.waitUntil) {
+        // 行き先は「物のある場所」を避けて選ぶ (何度か試してダメなら今回は休憩のまま)
+        let ok = false;
+        for (let i = 0; i < 8 && !ok; i++) {
+          const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * n.homeR;
+          const cx = n.home.x + Math.cos(a) * d, cz = n.home.z + Math.sin(a) * d;
+          if (npcTargetOk(cx, cz)) { n.tx = cx; n.tz = cz; ok = true; }
+        }
+        if (!ok) { n.waitUntil = now + 1200; }
+        else {
+          if (n.emote) { restoreArm(n); n.emote = null; } // 歩き出す時はエモートを片付ける
+          n.state = 'walk';
+          n.stuckAt = now; n.lastX = n.cur.x; n.lastZ = n.cur.z;
+        }
+      }
+    } else { // walk: 目標へゆっくり歩く (当たり判定は訪問者と同じ collide を使う)
+      const dx = n.tx - n.cur.x, dz = n.tz - n.cur.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.08) {
+        n.state = 'idle';
+        n.waitUntil = now + 1500 + Math.random() * 3500;
+      } else {
+        n.faceYaw = Math.atan2(-dx, -dz);
+        const step = Math.min(0.55 * dt, dist);
+        const [nx, nz] = collide(n.cur.x + dx / dist * step, n.cur.z + dz / dist * step);
+        n.cur.x = nx; n.cur.z = nz;
+        bob = Math.abs(Math.sin(now * 0.012)) * 0.03; // 歩行の小さな上下動
+        if (now - n.stuckAt > 1200) { // 物に引っかかって進めていない時はあきらめて休憩
+          if (Math.hypot(n.cur.x - n.lastX, n.cur.z - n.lastZ) < 0.05) {
+            n.state = 'idle';
+            n.waitUntil = now + 1000 + Math.random() * 2000;
+          }
+          n.stuckAt = now; n.lastX = n.cur.x; n.lastZ = n.cur.z;
+        }
+      }
+    }
+    let dy = n.faceYaw - n.cur.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    n.cur.yaw += dy * 0.15;
+    const fx = emoteFrame(n, now);
+    n.group.position.set(n.cur.x, fx.yOff + bob, n.cur.z);
+    n.group.rotation.y = n.cur.yaw + Math.PI;
+    n.inner.rotation.x = fx.bowX;
+    n.inner.rotation.z = fx.rockZ;
+    n.inner.rotation.y = fx.spinY;
+  }
+}
+
+// ---------------- 入室 / 退室 ----------------
+$('doEnter').onclick = async () => {
+  chimeResumeOnly();
+  show(null);
+  $('loading').classList.remove('hidden');
+  try {
+    await initRoom();
+  } catch (e) {
+    $('loading').classList.add('hidden');
+    showLobby();
+    return;
+  }
+  $('loading').classList.add('hidden');
+  pos.x = START.x; pos.z = START.z; lookAtStart();
+  inRoom = true;
+  ensureSelfAvatar();
+  ensureNpcs();
+  if (selfAvatar) selfAvatar.group.visible = thirdPerson;
+  knownIds = null;
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar']) $(el).classList.remove('hidden');
+  setupTouchControlsOnce();
+  $('helpText').innerHTML = isTouch
+    ? '左下のスティックで移動、画面をドラッグで見回します。<br>下の入力欄からチャット、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。'
+    : 'ドラッグで見回す、WASD／矢印キーで移動。<br>Enterキーでチャット入力、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。';
+  $('helpCard').classList.remove('hidden');
+  startRoomLoops();
+  setMusic(true);
+};
+function chimeResumeOnly() {
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
+}
+let touchSetupDone = false;
+function setupTouchControlsOnce() { if (!touchSetupDone) { setupTouchControls(); touchSetupDone = true; } }
+
+async function leaveRoom() {
+  stopRoomLoops();
+  setMusic(false);
+  try { await apiAuth('/api/leave', {}); } catch (e) {}
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard']) $(el).classList.add('hidden');
+  for (const [, r] of remotes) scene.remove(r.group);
+  remotes.clear();
+  if (selfAvatar) selfAvatar.group.visible = false;
+  showLobby();
+}
+$('btnLeave').onclick = leaveRoom;
+$('btnLogout2').onclick = async () => { await leaveRoom(); await doLogout(); };
+$('btnReset').onclick = () => { pos.x = START.x; pos.z = START.z; lookAtStart(); };
+$('btnMenu').onclick = () => $('menuPanel').classList.toggle('hidden');
+$('btnHelp').onclick = () => { $('helpCard').classList.remove('hidden'); $('menuPanel').classList.add('hidden'); };
+$('btnCloseHelp').onclick = () => $('helpCard').classList.add('hidden');
+let logVisible = true;
+$('btnToggleLog').onclick = () => {
+  logVisible = !logVisible;
+  $('chatLog').classList.toggle('hidden', !logVisible);
+  $('btnToggleLog').textContent = logVisible ? 'ログを隠す' : 'ログを表示';
+  $('menuPanel').classList.add('hidden');
+};
+$('btnSaveLog').onclick = () => {
+  $('menuPanel').classList.add('hidden');
+  if (!sessionLog.length) return;
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const head = 'StarryApa チャットログ (' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ')';
+  const lines = sessionLog.map(m => {
+    const t = new Date(m.ts);
+    return pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds()) + ' ' + m.name + '：' + m.text;
+  });
+  const blob = new Blob([[head, ...lines].join('\n')], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'starryapa_chat_' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+// ---------------- チャット ----------------
+$('chatInput').addEventListener('focus', () => { chatFocused = true; });
+$('chatInput').addEventListener('blur', () => { chatFocused = false; });
+let chatSending = false;
+async function sendChat() {
+  if (chatSending) return; // Enter連打・ボタンの二度押しで二重送信しない
+  const inp = $('chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  chatSending = true;
+  inp.value = '';
+  // v3.4: 自分の発言はポーリングを待たず即時表示 (一人称視点なので吹き出しは無し)
+  const pend = { text };
+  pendingOwn.push(pend);
+  appendChat({ name: me ? me.displayName : '', text });
+  try {
+    const { data } = await apiAuth('/api/say', { text });
+    if (data && data.message) {
+      seenMsgIds.add(data.message.id); // ポーリングで戻ってきても二重表示しない
+      logOnce(data.message);
+    }
+  } catch (e) {}
+  const ix = pendingOwn.indexOf(pend);
+  if (ix >= 0) pendingOwn.splice(ix, 1);
+  chatSending = false;
+  inp.blur();
+}
+$('chatSend').onclick = sendChat;
+$('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChat();
+  else if (e.key === 'Escape') $('chatInput').blur();
+});
+
+// FF14式: 部屋の中で Enter を押したらチャット入力にフォーカス (v3.4)
+addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !inRoom || chatFocused) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae !== $('chatInput')) return;
+  e.preventDefault();
+  if (ae && ae.tagName === 'BUTTON') ae.blur();
+  $('chatInput').focus();
+});
+
+// ---------------- エモート ----------------
+let lastEmoteSentAt = 0;
+let myEmote = null; // 自分のエモートの視点フィードバック用 {name, t0} (v3.4.2)
+function doEmote(name) {
+  if (!inRoom || !me) return;
+  const now = performance.now();
+  if (now - lastEmoteSentAt < 400) return; // 連打防止
+  lastEmoteSentAt = now;
+  // 自分のアバターにも同じエモートを付ける (三人称で見える。一人称では非表示なだけで害はない)
+  if (selfAvatar) {
+    restoreArm(selfAvatar); // 前の「手をあげる」が途中でも腕を戻してから次へ (リモートと同じ)
+    selfAvatar.emote = { name, t0: now };
+  }
+  // 視点フィードバックは一人称の時だけ (三人称では人形の動きが見えるので付けない)
+  if (!thirdPerson && (name === 'jump' || name === 'bow' || name === 'joy')) myEmote = { name, t0: now };
+  apiAuth('/api/emote', { emote: name, x: pos.x, z: pos.z, yaw }).catch(() => {});
+}
+$('emoteRaise').onclick = () => doEmote('raise');
+$('emoteJump').onclick = () => doEmote('jump');
+$('emoteBow').onclick = () => doEmote('bow');
+$('emoteJoy').onclick = () => doEmote('joy');
+
+// ページを閉じる時に退室
+addEventListener('pagehide', () => {
+  if (token && inRoom) {
+    try { navigator.sendBeacon('/api/leave', JSON.stringify({ token })); } catch (e) {}
+  }
+});
+
+// ---------------- 起動 ----------------
+(async () => {
+  if (token) {
+    const { data } = await api('/api/me', { token });
+    if (data.account) { me = data.account; showLobby(); return; }
+    token = null; localStorage.removeItem(TOKEN_KEY);
+  }
+  show('authScreen');
+})();
+
+
+</script>
+</body>
+</html>
