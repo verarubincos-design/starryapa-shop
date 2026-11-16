@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.13）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.14）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -948,6 +948,8 @@ function renderLoop() {
       r.group.remove(r.bubble); r.bubble = null;
     }
   }
+  // NPC (v3.14): 街の住人の自律行動
+  updateNpcs(now, dt);
   renderer.render(scene, camera);
 }
 
@@ -1074,6 +1076,102 @@ function ensureSelfAvatar() {
   selfAvatar.group.visible = thirdPerson;
 }
 
+// ---------------- NPC (v3.14): 街の住人 ----------------
+// サーバーとは通信せず、各クライアントの中で自律的に動く (見る人ごとに位置は少し違う)。
+// 訪問者よりひと回り小さく (0.8倍)、決まった範囲をうろうろ歩き、ときどき勝手にエモートする
+const npcs = [];
+const NPC_DEFS = [
+  { avatarType: 'girl', avatarColor: 'red',    home: { x: -19.6, z: 23.3 }, r: 1.5 },  // 商店街・花屋の前
+  { avatarType: 'boy',  avatarColor: 'green',  home: { x: -17.9, z: 23.7 }, r: 1.3 },  // 商店街・ゲーセンの前
+  { avatarType: 'girl', avatarColor: 'blue',   home: { x: -16.2, z: 23.4 }, r: 1.1 },  // 商店街・アーチのそば
+  { avatarType: 'vera', avatarColor: 'violet', home: { x: -21.3, z: -0.4 }, r: 2.0 },  // 公園・噴水のそば
+  { avatarType: 'boy',  avatarColor: 'yellow', home: { x: -25.5, z: 6.0 },  r: 2.2 },  // 公園の西側
+];
+function ensureNpcs() {
+  if (npcs.length) return;
+  const now = performance.now();
+  for (const d of NPC_DEFS) {
+    const n = createAvatar(
+      { avatarType: d.avatarType, avatarColor: d.avatarColor, name: '', isHost: false, x: d.home.x, z: d.home.z, yaw: Math.random() * Math.PI * 2, emoteAt: 0 },
+      true
+    );
+    n.group.scale.setScalar(0.8);
+    n.home = d.home; n.homeR = d.r;
+    n.faceYaw = n.cur.yaw;
+    n.state = 'idle';
+    n.waitUntil = now + 1000 + Math.random() * 3000;
+    n.nextEmoteAt = now + 5000 + Math.random() * 12000;
+    n.tx = d.home.x; n.tz = d.home.z;
+    n.stuckAt = 0; n.lastX = d.home.x; n.lastZ = d.home.z;
+    npcs.push(n);
+  }
+}
+const NPC_EMOTES = ['raise', 'raise', 'joy', 'bow', 'joy', 'jump'];
+function npcTargetOk(x, z) {
+  if (!inRegion(x, z)) return false;
+  for (const [x0, x1, z0, z1] of BOXES) {
+    if (x > x0 - 0.35 && x < x1 + 0.35 && z > z0 - 0.35 && z < z1 + 0.35) return false;
+  }
+  return true;
+}
+function updateNpcs(now, dt) {
+  for (const n of npcs) {
+    let bob = 0;
+    if (n.state === 'idle') {
+      if (now >= n.nextEmoteAt && !n.emote) {
+        n.emote = { name: NPC_EMOTES[(Math.random() * NPC_EMOTES.length) | 0], t0: now };
+        n.faceYaw = Math.random() * Math.PI * 2; // エモートのたびに適当な方を向く
+        n.nextEmoteAt = now + 9000 + Math.random() * 14000;
+      }
+      if (now >= n.waitUntil) {
+        // 行き先は「物のある場所」を避けて選ぶ (何度か試してダメなら今回は休憩のまま)
+        let ok = false;
+        for (let i = 0; i < 8 && !ok; i++) {
+          const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * n.homeR;
+          const cx = n.home.x + Math.cos(a) * d, cz = n.home.z + Math.sin(a) * d;
+          if (npcTargetOk(cx, cz)) { n.tx = cx; n.tz = cz; ok = true; }
+        }
+        if (!ok) { n.waitUntil = now + 1200; }
+        else {
+          if (n.emote) { restoreArm(n); n.emote = null; } // 歩き出す時はエモートを片付ける
+          n.state = 'walk';
+          n.stuckAt = now; n.lastX = n.cur.x; n.lastZ = n.cur.z;
+        }
+      }
+    } else { // walk: 目標へゆっくり歩く (当たり判定は訪問者と同じ collide を使う)
+      const dx = n.tx - n.cur.x, dz = n.tz - n.cur.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.08) {
+        n.state = 'idle';
+        n.waitUntil = now + 1500 + Math.random() * 3500;
+      } else {
+        n.faceYaw = Math.atan2(-dx, -dz);
+        const step = Math.min(0.55 * dt, dist);
+        const [nx, nz] = collide(n.cur.x + dx / dist * step, n.cur.z + dz / dist * step);
+        n.cur.x = nx; n.cur.z = nz;
+        bob = Math.abs(Math.sin(now * 0.012)) * 0.03; // 歩行の小さな上下動
+        if (now - n.stuckAt > 1200) { // 物に引っかかって進めていない時はあきらめて休憩
+          if (Math.hypot(n.cur.x - n.lastX, n.cur.z - n.lastZ) < 0.05) {
+            n.state = 'idle';
+            n.waitUntil = now + 1000 + Math.random() * 2000;
+          }
+          n.stuckAt = now; n.lastX = n.cur.x; n.lastZ = n.cur.z;
+        }
+      }
+    }
+    let dy = n.faceYaw - n.cur.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    n.cur.yaw += dy * 0.15;
+    const fx = emoteFrame(n, now);
+    n.group.position.set(n.cur.x, fx.yOff + bob, n.cur.z);
+    n.group.rotation.y = n.cur.yaw + Math.PI;
+    n.inner.rotation.x = fx.bowX;
+    n.inner.rotation.z = fx.rockZ;
+    n.inner.rotation.y = fx.spinY;
+  }
+}
+
 // ---------------- 入室 / 退室 ----------------
 $('doEnter').onclick = async () => {
   chimeResumeOnly();
@@ -1090,6 +1188,7 @@ $('doEnter').onclick = async () => {
   pos.x = START.x; pos.z = START.z; lookAtStart();
   inRoom = true;
   ensureSelfAvatar();
+  ensureNpcs();
   if (selfAvatar) selfAvatar.group.visible = thirdPerson;
   knownIds = null;
   for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar']) $(el).classList.remove('hidden');
