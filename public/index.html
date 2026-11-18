@@ -74,7 +74,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.18）</div>
+    <div class="sub">みんなで歩ける小さなお店（v3.19）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -691,7 +691,18 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-36.45, -34.95, 19.4, 19.75],   // 本棚
   [-35.15, -34.55, 15.43, 15.87],  // 床のビールケース (北東の隅)
   [-35.47, -35.23, 15.03, 15.27],  // フロアランプ
-  [-34.37, -33.93, 18.33, 18.77]   // ドア横のプランター
+  [-34.37, -33.93, 18.33, 18.77],  // ドア横のプランター
+  // v3.19: 山の頂上の物と斜面の木 (2D判定だが、同じx,zにはその高さでしか行けないので問題なし)
+  [-45.36, -45.04, 0.8, 1.8],      // 頂上のベンチ (南)
+  [-45.36, -45.04, -1.8, -0.8],    // 頂上のベンチ (北)
+  [-44.52, -44.28, -2.52, -2.28],  // 頂上の★看板
+  [-49.32, -49.08, -0.12, 0.12],   // 金の玉のポール
+  [-40.29, -39.95, -5.97, -5.63],  // 斜面の木
+  [-53.05, -52.71, -8.25, -7.91],  // 斜面の木
+  [-54.34, -54.0, 3.37, 3.71],     // 斜面の木
+  [-50.4, -50.06, 9.82, 10.16],    // 斜面の木
+  [-43.01, -42.67, 6.07, 6.41],    // 斜面の木
+  [-46.03, -45.69, -9.6, -9.26]    // 斜面の木
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
@@ -723,8 +734,17 @@ const REGIONS = [
   // v3.16: 芝生をレイナ亭の先まで拡張
   [-29.9, -4.02, -31.0, 39.5],
   // v3.18: 公園の向こうの横の道と酒屋・イクオハウスの敷地 (西の地面の範囲内)
-  [-39.3, -29.9, -14.3, 30.3]
+  [-39.3, -29.9, -14.3, 30.3],
+  // v3.19: 山とその周りの地面
+  [-59.5, -39.3, -12.5, 12.5]
 ];
+// v3.19: 地面の高さ。山 (中心(-47,0)・裾の半径12・頂上の半径3.5・高さ5.58) の上だけ高くなる
+function groundH(x, z) {
+  const d = Math.hypot(x + 47, z);
+  if (d >= 12) return 0;
+  if (d <= 3.5) return 5.58;
+  return 5.58 * (12 - d) / 8.5;
+}
 function inRegion(x, z) {
   const E = 1e-6;
   for (const [a, b, c, d] of REGIONS) if (x >= a - E && x <= b + E && z >= c - E && z <= d + E) return true;
@@ -952,13 +972,15 @@ function renderLoop() {
     const inPoku = pos.x > -9.3 && pos.x < -5.5 && pos.z > 9.6 && pos.z < 13.4;  // v3.15: ポクテハウスの中
     const inReina = pos.x > -15.1 && pos.x < -10.0 && pos.z > 33.5 && pos.z < 37.5;  // v3.16: レイナ亭の中
     const inIkuo = pos.x > -38.6 && pos.x < -34.5 && pos.z > 14.6 && pos.z < 19.8;  // v3.18: イクオハウスの中
+    const onMtn = pos.x < -38.5 && pos.z > -13.5 && pos.z < 13.5;  // v3.19: 山とその周り
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (pos.x < -3.85 ? westMinX : -3.75)));
-    const camMaxX = inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (pos.x < -3.85 ? -4.35 : 3.75)));
+    const camMinX = inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))));
+    const camMaxX = inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (pos.x < -3.85 ? -31.6 : -3.3)));
-    const camMaxZ = inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (pos.x < -3.85 ? 39.6 : 3.15)));
+    const camMinZ = inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))));
+    const camMaxZ = inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))));
+    const myY = groundH(pos.x, pos.z);  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
     else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
@@ -968,22 +990,22 @@ function renderLoop() {
     if (tMax >= 0.3) {
       const camDist = Math.max(0.3, tMax);
       cx = pos.x - fwdX * camDist; cz = pos.z - fwdZ * camDist;
-      cy = 1.45 - pitch * 0.8;                       // pitch (見上げ/見下ろし) でカメラの高さが少し動く
+      cy = myY + 1.45 - pitch * 0.8;                       // pitch (見上げ/見下ろし) でカメラの高さが少し動く
     } else {
       // 背後に壁が近すぎる時は、ほぼ真上から見下ろす形にする (キャラが画面外に消えないように)
       const back = Math.max(0, tMax);
       cx = pos.x - fwdX * back; cz = pos.z - fwdZ * back;
-      cy = 2.1;
+      cy = myY + 2.1;
     }
     camera.position.set(cx, cy, cz);
     // キャラの少し上・少し前を見る
-    camera.lookAt(pos.x + fwdX * 0.4, 0.95 + pitch * 0.5, pos.z + fwdZ * 0.4);
+    camera.lookAt(pos.x + fwdX * 0.4, myY + 0.95 + pitch * 0.5, pos.z + fwdZ * 0.4);
   } else {
     // v3.4.2: 自分のエモートの視点フィードバック (v3.4 仕様。本人の希望で復活)。
     // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
     // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
     // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
-    let camY = 1.5, camPitch = pitch, camYaw = yaw;
+    let camY = 1.5 + groundH(pos.x, pos.z), camPitch = pitch, camYaw = yaw;  // v3.19: 山の上では視点も上がる
     if (myEmote) {
       const t = (now - myEmote.t0) / 1000;
       if (myEmote.name === 'jump') {
@@ -1006,7 +1028,7 @@ function renderLoop() {
   if (selfAvatar) {
     selfAvatar.group.visible = thirdPerson;
     const sfx = emoteFrame(selfAvatar, now);
-    selfAvatar.group.position.set(pos.x, sfx.yOff, pos.z);
+    selfAvatar.group.position.set(pos.x, groundH(pos.x, pos.z) + sfx.yOff, pos.z);
     selfAvatar.group.rotation.y = yaw + Math.PI;
     selfAvatar.inner.rotation.x = sfx.bowX;
     selfAvatar.inner.rotation.z = sfx.rockZ;
@@ -1021,7 +1043,7 @@ function renderLoop() {
     while (dy < -Math.PI) dy += Math.PI * 2;
     r.cur.yaw += dy * 0.18;
     const fx = emoteFrame(r, now);
-    r.group.position.set(r.cur.x, fx.yOff, r.cur.z);
+    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + fx.yOff, r.cur.z);
     r.group.rotation.y = r.cur.yaw + Math.PI;
     r.inner.rotation.x = fx.bowX;
     r.inner.rotation.z = fx.rockZ;
@@ -1246,7 +1268,7 @@ function updateNpcs(now, dt) {
     while (dy < -Math.PI) dy += Math.PI * 2;
     n.cur.yaw += dy * 0.15;
     const fx = emoteFrame(n, now);
-    n.group.position.set(n.cur.x, fx.yOff + bob, n.cur.z);
+    n.group.position.set(n.cur.x, groundH(n.cur.x, n.cur.z) + fx.yOff + bob, n.cur.z);
     n.group.rotation.y = n.cur.yaw + Math.PI;
     n.inner.rotation.x = fx.bowX;
     n.inner.rotation.z = fx.rockZ;
