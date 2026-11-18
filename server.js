@@ -1,5 +1,7 @@
-// StarryApa みんなで歩けるお店 (Render用スタンドアロン版)
-// 依存ライブラリなし。Node.js 標準機能だけで動きます。
+// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.0
+// v4.0: アカウントと掲示板を Neon Postgres に保存 (環境変数 DATABASE_URL)。
+// DATABASE_URL が無い/接続できない場合は従来どおり data.json + メモリで動く。
+// pg ライブラリが無い環境でも落ちないよう、読み込み失敗時はフォールバックする。
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -9,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// ---------- アカウント保存 (data.json) ----------
+// ---------- アカウントのメモリキャッシュ ----------
 let accounts = new Map(); // loginId(小文字) -> account
 function loadData() {
   try {
@@ -24,34 +26,131 @@ function saveData() {
     try { fs.writeFileSync(DATA_FILE, JSON.stringify({ accounts: [...accounts.values()] })); } catch (e) {}
   }, 200);
 }
-loadData();
+
+// ---------- データ保存層 (v4.0) ----------
+// DATABASE_URL があれば Postgres (Neon) を使う。無ければ従来方式。
+// 起動時にアカウントを全件メモリへ読み込み、登録時だけDBへ書き込む
+// (読み取りはメモリキャッシュから行うので既存の同期コードはそのまま)。
+const DATABASE_URL = process.env.DATABASE_URL || '';
+let pool = null;
+if (DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false }, max: 3 });
+  } catch (e) {
+    console.error('pg ライブラリを読み込めませんでした。メモリ保存にフォールバックします:', e.message);
+    pool = null;
+  }
+}
+
+let boardMem = [];      // フォールバック時の掲示板 (メモリ内)
+let nextBoardId = 1;
+
+async function storeInit() {
+  if (!pool) { loadData(); return; }
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS accounts (
+      login_id TEXT PRIMARY KEY,
+      login_name TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      avatar_type TEXT NOT NULL,
+      avatar_color TEXT NOT NULL,
+      is_host BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at BIGINT NOT NULL
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS board_posts (
+      id SERIAL PRIMARY KEY,
+      login_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )`);
+    const r = await pool.query('SELECT * FROM accounts');
+    for (const row of r.rows) {
+      accounts.set(row.login_id, {
+        loginId: row.login_name, salt: row.salt, hash: row.hash,
+        displayName: row.display_name, avatarType: row.avatar_type,
+        avatarColor: row.avatar_color, isHost: row.is_host,
+        createdAt: Number(row.created_at)
+      });
+    }
+    console.log('DB接続OK: アカウント ' + r.rows.length + ' 件を読み込みました');
+  } catch (e) {
+    console.error('DB初期化に失敗しました。メモリ保存にフォールバックします:', e.message);
+    pool = null;
+    loadData();
+  }
+}
+
+async function storeSaveAccount(a) {
+  if (!pool) { saveData(); return; }
+  await pool.query(
+    `INSERT INTO accounts (login_id, login_name, salt, hash, display_name, avatar_type, avatar_color, is_host, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [a.loginId.toLowerCase(), a.loginId, a.salt, a.hash, a.displayName,
+     a.avatarType, a.avatarColor, !!a.isHost, a.createdAt]
+  );
+}
+
+function rowToPost(row) {
+  return { id: row.id, from: row.login_id, name: row.display_name, text: row.text, ts: Number(row.created_at) };
+}
+
+async function boardList() {
+  if (!pool) return boardMem.slice(-50).reverse();
+  const r = await pool.query(
+    'SELECT id, login_id, display_name, text, created_at FROM board_posts ORDER BY id DESC LIMIT 50'
+  );
+  return r.rows.map(rowToPost);
+}
+
+async function boardAdd(from, name, text) {
+  const ts = Date.now();
+  if (!pool) {
+    const post = { id: nextBoardId++, from, name, text, ts };
+    boardMem.push(post);
+    if (boardMem.length > 200) boardMem = boardMem.slice(-200);
+    return post;
+  }
+  const r = await pool.query(
+    'INSERT INTO board_posts (login_id, display_name, text, created_at) VALUES ($1, $2, $3, $4) RETURNING id',
+    [from, name, text, ts]
+  );
+  return { id: r.rows[0].id, from, name, text, ts };
+}
+
+async function boardDelete(id) {
+  if (!pool) {
+    boardMem = boardMem.filter(p => p.id !== id);
+    return;
+  }
+  await pool.query('DELETE FROM board_posts WHERE id = $1', [id]);
+}
 
 // ---------- 店主アカウントの種まき (v3.3) ----------
-// Renderの無料プランは再デプロイ/再起動で data.json が消えるため、
 // 環境変数 HOST_PASSWORD が設定されていれば、起動のたびに店主アカウントが
 // 無い場合だけ作り直す。既存のアカウントは上書きしない。
-// パスワードはGitHubには置かず、Renderの Environment で設定する。
 const HOST_LOGIN_ID = (process.env.HOST_LOGIN_ID || 'vera').trim().toLowerCase();
 const HOST_DISPLAY_NAME = (process.env.HOST_DISPLAY_NAME || 'ベラ').trim() || 'ベラ';
-function ensureHostAccount() {
+async function ensureHostAccount() {
   const pw = process.env.HOST_PASSWORD || '';
   if (!pw || pw.length < 4) return;
   if (accounts.has(HOST_LOGIN_ID)) return;
   const salt = crypto.randomBytes(16).toString('hex');
-  accounts.set(HOST_LOGIN_ID, {
+  const account = {
     loginId: HOST_LOGIN_ID, salt, hash: hashPw(pw, salt),
     displayName: HOST_DISPLAY_NAME, avatarType: 'vera', avatarColor: 'violet',
     isHost: HOST_LOGIN_ID === 'vera', createdAt: Date.now()
-  });
-  saveData();
+  };
+  accounts.set(HOST_LOGIN_ID, account);
+  try { await storeSaveAccount(account); } catch (e) { console.error('店主アカウントの保存に失敗:', e.message); }
 }
-ensureHostAccount();
 
 // ---------- ログイン記憶 (v3.3) ----------
 // SESSION_SECRET が設定されていれば、トークンは秘密鍵付きの署名トークンになり、
 // サーバーの再起動・再デプロイをまたいで有効 (有効期限30日)。
-// 未設定なら従来どおりのランダム・メモリ内トークン。
-// 署名トークンのログアウトはブラウザ側のトークン削除のみ (サーバー側の無効化リストは無し)。
 const SESSION_SECRET = process.env.SESSION_SECRET || '';
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;
 function makeToken(loginId) {
@@ -80,9 +179,6 @@ function tokenToLoginId(token) {
 // ---------- 実行時状態 ----------
 const sessions = new Map();  // token -> loginId(小文字)
 const presence = new Map();  // loginId(小文字) -> {x, z, yaw, lastSeen, joinedAt, emote, emoteAt}
-// 在室判定 (v3.4): FRESH_MS 以内の heartbeat があれば「在室」として一覧に出す。
-// 以前は6秒だったため、タブがスロットリングされた端末が点滅して見えた。
-// KEEP_MS 以内なら同じ入室 (joinedAt 維持) とみなし、ドアベルの誤爆も防ぐ。
 const PRESENCE_FRESH_MS = 30000;
 const PRESENCE_KEEP_MS = 180000;
 const EMOTES = ['raise', 'jump', 'bow', 'joy'];
@@ -106,7 +202,7 @@ function authOf(body) {
 }
 
 // ---------- API ----------
-function apiRegister(body, res) {
+async function apiRegister(body, res) {
   const loginId = String(body.loginId || '').trim();
   const password = String(body.password || '');
   const displayName = String(body.displayName || 'ベラ').trim().slice(0, 20) || 'ベラ';
@@ -122,7 +218,13 @@ function apiRegister(body, res) {
     isHost: key === 'vera', createdAt: Date.now()
   };
   accounts.set(key, account);
-  saveData();
+  try {
+    await storeSaveAccount(account);
+  } catch (e) {
+    console.error('アカウント保存に失敗:', e.message);
+    accounts.delete(key);
+    return sendJson(res, 500, { error: '保存に失敗しました。少し待ってから再度お試しください' });
+  }
   const token = makeToken(key);
   sessions.set(token, key);
   return sendJson(res, 200, { token, account: publicAccount(account) });
@@ -163,7 +265,6 @@ function apiHeartbeat(body, res) {
   const key = a.loginId.toLowerCase();
   const now = Date.now();
   const prev = presence.get(key);
-  // KEEP_MS 以内の再開は「同じ入室」の続きとして joinedAt とエモート状態を引き継ぐ
   const sameVisit = !!prev && (now - prev.lastSeen <= PRESENCE_KEEP_MS);
   presence.set(key, {
     x: +body.x || 0, z: +body.z || 0, yaw: +body.yaw || 0, lastSeen: now,
@@ -223,7 +324,6 @@ function apiSay(body, res) {
   const msg = { id: nextMsgId++, from: a.loginId.toLowerCase(), name: a.displayName, text, ts: Date.now() };
   messages.push(msg);
   if (messages.length > 50) messages = messages.slice(-50);
-  // v3.4: 送信者に確定したメッセージ (id付き) を返す。クライアントの即時表示と重複排除に使う
   return sendJson(res, 200, { ok: true, message: msg });
 }
 
@@ -240,6 +340,33 @@ function apiLeave(body, res) {
   return sendJson(res, 200, { ok: true });
 }
 
+// ---------- 掲示板API (v4.0) ----------
+async function apiBoardList(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const posts = await boardList();
+  return sendJson(res, 200, { posts, isHost: !!a.isHost });
+}
+
+async function apiBoardPost(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const text = String(body.text || '').trim().slice(0, 200);
+  if (!text) return sendJson(res, 400, { error: 'empty' });
+  const post = await boardAdd(a.loginId.toLowerCase(), a.displayName, text);
+  return sendJson(res, 200, { ok: true, post });
+}
+
+async function apiBoardDelete(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  if (!a.isHost) return sendJson(res, 403, { error: '削除できるのは店主だけです' });
+  const id = +body.id || 0;
+  if (!id) return sendJson(res, 400, { error: 'bad id' });
+  await boardDelete(id);
+  return sendJson(res, 200, { ok: true });
+}
+
 const API = {
   '/api/register': apiRegister,
   '/api/login': apiLogin,
@@ -250,7 +377,10 @@ const API = {
   '/api/emote': apiEmote,
   '/api/say': apiSay,
   '/api/messages': apiMessages,
-  '/api/leave': apiLeave
+  '/api/leave': apiLeave,
+  '/api/board/list': apiBoardList,
+  '/api/board/post': apiBoardPost,
+  '/api/board/delete': apiBoardDelete
 };
 
 // ---------- HTTP ----------
@@ -267,7 +397,8 @@ const MIME = {
   '.json': 'application/json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
-  '.glb': 'model/gltf-binary'
+  '.glb': 'model/gltf-binary',
+  '.mp3': 'audio/mpeg'
 };
 
 function serveStatic(req, res, urlPath) {
@@ -295,7 +426,10 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       let body = {};
       try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; }
-      API[u.pathname](body, res);
+      Promise.resolve(API[u.pathname](body, res)).catch(err => {
+        console.error('APIエラー ' + u.pathname + ':', err.message);
+        if (!res.headersSent) sendJson(res, 500, { error: 'server error' });
+      });
     });
     return;
   }
@@ -303,4 +437,9 @@ const server = http.createServer((req, res) => {
   res.writeHead(405); res.end();
 });
 
-server.listen(PORT, () => console.log('StarryApa shop listening on port ' + PORT));
+// ---------- 起動 (DB初期化 → 店主の種まき → 待ち受け) ----------
+(async () => {
+  await storeInit();
+  await ensureHostAccount();
+  server.listen(PORT, () => console.log('StarryApa shop listening on port ' + PORT + (pool ? ' (DB保存モード)' : ' (メモリ保存モード)')));
+})();
