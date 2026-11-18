@@ -66,6 +66,21 @@
   body.touch #stick { display: block; }
   body.touch #chatLog { bottom: 240px; max-height: 24vh; }
   #errBox { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(10,6,8,0.9); padding: 20px; text-align: center; font-size: 14px; line-height: 1.9; }
+  /* ---------- 掲示板 (v4.0) ---------- */
+  #boardBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(122,45,58,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #boardPanel { position: fixed; left: 50%; top: 6%; transform: translateX(-50%); z-index: 23; width: min(92vw, 440px); max-height: 82vh; display: flex; flex-direction: column; background: rgba(30,18,20,0.95); border: 1px solid rgba(255,217,160,0.5); border-radius: 14px; padding: 14px 16px; font-size: 13px; }
+  #boardPanel h2 { font-size: 15px; color: #ffd9a0; margin-bottom: 8px; }
+  #boardList { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .bpost { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 7px 9px; }
+  .bhead { display: flex; gap: 8px; align-items: center; }
+  .bhead .who { color: #ffd9a0; font-weight: bold; }
+  .btime { color: #b8a89a; font-size: 11px; }
+  .bdel { margin-left: auto; background: none; border: 1px solid rgba(255,150,150,0.5); color: #ff9d9d; border-radius: 6px; font-size: 11px; padding: 2px 7px; }
+  .btext { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+  .bempty { color: #cbb9a6; padding: 8px 2px; }
+  #boardBar { display: flex; gap: 6px; margin-bottom: 8px; }
+  #boardInput { flex: 1; padding: 9px 11px; border-radius: 10px; border: 1px solid rgba(255,217,160,0.4); background: rgba(30,18,20,0.85); color: #fff; font-size: 16px; }
+  #boardSend { padding: 9px 14px; border-radius: 10px; border: none; background: #a83a4a; color: #fff; font-size: 14px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -74,7 +89,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v3.19.1）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.0）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -159,6 +174,16 @@
   <button id="emoteJump">⤴ ジャンプ</button>
   <button id="emoteBow">🙇 お辞儀</button>
   <button id="emoteJoy">🙌 よろこぶ</button>
+</div>
+<button id="boardBtn" class="hidden">📋 掲示板を見る</button>
+<div id="boardPanel" class="hidden">
+  <h2>掲示板</h2>
+  <div id="boardList"></div>
+  <div id="boardBar">
+    <input type="text" id="boardInput" placeholder="伝言を書く（200文字まで）" maxlength="200">
+    <button id="boardSend">書く</button>
+  </div>
+  <button class="hud-btn" id="btnCloseBoard">とじる</button>
 </div>
 <audio id="bgm" loop preload="auto" src="assets/starry_waltz.mp3"></audio>
 <div id="stick"><div id="stickKnob"></div></div>
@@ -329,7 +354,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb'],
+    ['room', 'assets/starryapa_room.glb?v=40'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -582,15 +607,13 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-10.75, -10.15, -15.2, -12.85], // はに茶屋の前の生け垣
   [-10.75, -10.15, -10.15, -7.8],
   [-10.15, -9.65, -12.35, -11.85], // はに茶屋の石灯籠
-  [-25.75, -21.45, -2.85, 1.65],   // 公園の噴水 (v3.17: 花の輪まで広げた)
+  [-25.75, -21.45, -1.45, 2.65],   // 公園の噴水 (v4.0: 実物の位置に合わせて z を修正)
   [-21.93, -21.67, 4.47, 4.73],    // 桜の木 (v3.17)
   [-25.93, -25.67, -3.53, -3.27],  // 桜の木 (v3.17)
   [-19.93, -19.67, -9.93, -9.67],  // 桜の木 (v3.17)
   [-27.93, -27.67, 8.47, 8.73],    // 桜の木 (v3.17)
   // v3.17.1: 花のアーチの柱は細いので当たり判定なし (入口で引っ掛かるため、ベンチと同じく素通り)
-  [-26.9, -26.4, -1.05, -0.15],    // ベンチ (西)
-  [-24.0, -23.0, -4.05, -3.45],    // ベンチ (北)
-  [-24.0, -23.0, 2.25, 2.85],      // ベンチ (南)
+  // v4.0: ベンチの当たり判定を撤去 (実物とずれた場所にあり、見えない壁になっていたため。本来の仕様どおり素通りに)
   [-20.3, -18.7, 2.6, 4.2],        // 花壇
   [-20.3, -18.7, -5.4, -3.8],
   [-28.3, -26.7, 2.4, 4.0],
@@ -705,7 +728,8 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-46.03, -45.69, -9.6, -9.26],   // 斜面の木
   // v3.19.1: 公園の西側の生け垣 (中央の抜け口だけ通れる)
   [-30.35, -29.65, 1.55, 16.1],    // 公園奥の生け垣 (抜け口より南)
-  [-30.35, -29.65, -16.1, -1.55]   // 公園奥の生け垣 (抜け口より北)
+  [-30.35, -29.65, -16.1, -1.55],  // 公園奥の生け垣 (抜け口より北)
+  [-18.85, -18.35, -2.85, -0.55]   // 掲示板 (v4.0)
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
@@ -1317,7 +1341,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1386,6 +1410,82 @@ $('chatInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendChat();
   else if (e.key === 'Escape') $('chatInput').blur();
 });
+
+// ---------- 掲示板 (v4.0): 公園の掲示板に近づくとボタンが出る ----------
+const BOARD_POS = { x: -18.6, z: -1.7 };
+let boardHost = false;
+function fmtBoardTs(ts) {
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+    String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function renderBoard(posts) {
+  const el = $('boardList');
+  el.innerHTML = '';
+  if (!posts.length) {
+    el.innerHTML = '<div class="bempty">まだ何も書かれていません。最初の伝言をどうぞ。</div>';
+    return;
+  }
+  for (const p of posts) {
+    const div = document.createElement('div');
+    div.className = 'bpost';
+    const head = document.createElement('div');
+    head.className = 'bhead';
+    const who = document.createElement('span');
+    who.className = 'who'; who.textContent = p.name;
+    const time = document.createElement('span');
+    time.className = 'btime'; time.textContent = fmtBoardTs(p.ts);
+    head.appendChild(who); head.appendChild(time);
+    if (boardHost) {
+      const del = document.createElement('button');
+      del.className = 'bdel'; del.textContent = '削除';
+      del.onclick = async () => {
+        if (!confirm('この書き込みを削除しますか？')) return;
+        try { await apiAuth('/api/board/delete', { id: p.id }); } catch (e) {}
+        openBoard();
+      };
+      head.appendChild(del);
+    }
+    const body = document.createElement('div');
+    body.className = 'btext'; body.textContent = p.text;
+    div.appendChild(head); div.appendChild(body);
+    el.appendChild(div);
+  }
+}
+async function openBoard() {
+  $('boardPanel').classList.remove('hidden');
+  $('boardList').innerHTML = '<div class="bempty">読み込み中…</div>';
+  try {
+    const { data } = await apiAuth('/api/board/list', {});
+    boardHost = !!data.isHost;
+    renderBoard(data.posts || []);
+  } catch (e) {
+    $('boardList').innerHTML = '<div class="bempty">読み込めませんでした。</div>';
+  }
+}
+$('boardBtn').onclick = openBoard;
+$('btnCloseBoard').onclick = () => $('boardPanel').classList.add('hidden');
+async function sendBoard() {
+  const inp = $('boardInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  try { await apiAuth('/api/board/post', { text }); } catch (e) {}
+  openBoard();
+}
+$('boardSend').onclick = sendBoard;
+$('boardInput').addEventListener('focus', () => { chatFocused = true; });
+$('boardInput').addEventListener('blur', () => { chatFocused = false; });
+$('boardInput').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') sendBoard();
+  else if (e.key === 'Escape') $('boardInput').blur();
+});
+setInterval(() => {
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); return; }
+  const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
+  $('boardBtn').classList.toggle('hidden', d > 2.6);
+}, 300);
 
 // FF14式: 部屋の中で Enter を押したらチャット入力にフォーカス (v3.4)
 addEventListener('keydown', e => {
