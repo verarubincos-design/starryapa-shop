@@ -1,4 +1,5 @@
-// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.3
+// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.6
+// v4.6: メリーゴーラウンド乗車用に、heartbeat の ry (足元の高さオフセット) を中継する。
 // v4.3: 山頂の発射ボタンで花火 (全員に /api/players 経由で放送、クールダウン10秒)。星空とウメハウスはクライアント/GLB側。
 // v4.1: ベラ人形は店主専用に (登録時＋起動時に補正)。Bar AQUA の内装はクライアント/GLB側。
 // v4.0: アカウントと掲示板を Neon Postgres に保存 (環境変数 DATABASE_URL)。
@@ -272,7 +273,7 @@ function apiHeartbeat(body, res) {
   const prev = presence.get(key);
   const sameVisit = !!prev && (now - prev.lastSeen <= PRESENCE_KEEP_MS);
   presence.set(key, {
-    x: +body.x || 0, z: +body.z || 0, yaw: +body.yaw || 0, lastSeen: now,
+    x: +body.x || 0, z: +body.z || 0, yaw: +body.yaw || 0, ry: +body.ry || 0, lastSeen: now,
     joinedAt: sameVisit ? prev.joinedAt : now,
     emote: sameVisit ? prev.emote : null,
     emoteAt: sameVisit ? prev.emoteAt : 0
@@ -294,7 +295,7 @@ function apiPlayers(body, res) {
     if (!acc) continue;
     list.push({
       id: key, name: acc.displayName, avatarType: acc.avatarType, avatarColor: acc.avatarColor,
-      isHost: acc.isHost, x: p.x, z: p.z, yaw: p.yaw,
+      isHost: acc.isHost, x: p.x, z: p.z, yaw: p.yaw, ry: p.ry || 0,
       joinedAt: p.joinedAt, emote: p.emote, emoteAt: p.emoteAt
     });
   }
