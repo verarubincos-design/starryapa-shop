@@ -89,7 +89,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.1.3）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.2）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -293,6 +293,7 @@ let renderer, scene, camera, clock;
 let roomReady = false, inRoom = false;
 const dollScenes = {}; // type -> THREE.Object3D (original)
 let fish = null, fishBase = null, fishC = null, fishRotY = 0;   // v4.1: Bar AQUA の水槽の魚
+let starLayers = [];   // v4.2: 星空 (2層ドーム)
 const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
 const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
 const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb' };
@@ -324,7 +325,7 @@ async function initRoom() {
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x2c3d63);   // v3.6: 薄暮ブルーの空 (ベラの希望で明るく)
-  camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.05, 100);
+  camera = new THREE.PerspectiveCamera(66, innerWidth / innerHeight, 0.05, 600);   // v4.2: far を星空ドーム (R~300) まで届くように
   camera.rotation.order = 'YXZ';
   clock = new THREE.Clock();
 
@@ -357,12 +358,46 @@ async function initRoom() {
   const TL = new THREE.PointLight(0x66ccee, 7, 5, 2);
   TL.position.set(-21.1, 1.5, -25.3);
   scene.add(TL);
+  // v4.2: ウメハウス室内の明かり (ハチミツ色)
+  const UL = new THREE.PointLight(0xffd34d, 8, 6, 2);
+  UL.position.set(-36.4, 1.7, 10.9);
+  scene.add(UL);
+  // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
+  {
+    const CX = -20, CZ = 0, R = 300;
+    const tints = [[1, 1, 1], [0.82, 0.88, 1], [1, 0.93, 0.80], [0.90, 0.95, 1]];
+    const mkStars = (count, size, baseOp) => {
+      const pos = new Float32Array(count * 3), col = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const az = Math.random() * Math.PI * 2;
+        const el = Math.asin(0.08 + Math.random() * 0.92);   // 高度 約5°〜90°
+        const r = R * (0.9 + Math.random() * 0.15);
+        pos[i * 3] = CX + r * Math.cos(el) * Math.cos(az);
+        pos[i * 3 + 1] = r * Math.sin(el);
+        pos[i * 3 + 2] = CZ + r * Math.cos(el) * Math.sin(az);
+        const t = tints[(Math.random() * tints.length) | 0];
+        const b = 0.55 + Math.random() * 0.45;
+        col[i * 3] = t[0] * b; col[i * 3 + 1] = t[1] * b; col[i * 3 + 2] = t[2] * b;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const m = new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true,
+        transparent: true, opacity: baseOp, depthWrite: false });
+      const p = new THREE.Points(g, m);
+      p.frustumCulled = false;
+      scene.add(p);
+      starLayers.push({ m, baseOp, phase: Math.random() * 6.28, speed: 0.5 + Math.random() * 0.9 });
+    };
+    mkStars(900, 1.6, 0.85);
+    mkStars(260, 2.8, 0.95);
+  }
 
   const manager = new THREE.LoadingManager();
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=42'],
+    ['room', 'assets/starryapa_room.glb?v=43'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -717,7 +752,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-32.02, -31.78, 27.38, 27.62],  // 横の道の街灯 (南)
   [-32.02, -31.78, 13.38, 13.62],  // 横の道の街灯 (中)
   [-32.02, -31.78, -1.62, -1.38],  // 横の道の街灯 (北)
-  [-37.37, -37.03, 12.43, 12.77],  // イクオハウスの北の木の幹
+  [-37.17, -36.83, 6.03, 6.37],    // ウメハウスの北の木の幹 (v4.2: ウメハウス建築に合わせて北へ移動)
   [-37.57, -37.23, 28.43, 28.77],  // 酒屋の南の木の幹
   [-38.35, -34.45, 20.85, 26.15],  // 酒屋の建物 (外観のみ)
   [-34.2, -33.5, 24.25, 25.7],     // 酒屋の店前の酒樽
@@ -737,6 +772,20 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-35.15, -34.55, 15.43, 15.87],  // 床のビールケース (北東の隅)
   [-35.47, -35.23, 15.03, 15.27],  // フロアランプ
   [-34.37, -33.93, 18.33, 18.77],  // ドア横のプランター
+  // ウメハウス (v4.2・中に入れる家) 壁と家具
+  [-38.4, -38.25, 8.48, 13.32],    // 西の壁
+  [-38.4, -34.4, 8.48, 8.65],      // 北の壁
+  [-38.4, -34.4, 13.15, 13.32],    // 南の壁
+  [-34.55, -34.4, 11.375, 13.3],   // 東の壁 (ドアより南)
+  [-34.55, -34.4, 8.5, 10.425],    // 東の壁 (ドアより北)
+  [-34.61, -34.55, 11.73, 12.63],  // 開いたドア板
+  [-38.24, -37.2, 10.73, 12.57],   // ベッド
+  [-36.4, -35.3, 10.05, 11.15],    // 丸テーブル
+  [-36.06, -35.64, 9.61, 10.03],   // 椅子 (北)
+  [-36.06, -35.64, 11.17, 11.59],  // 椅子 (南)
+  [-38.26, -37.78, 9.19, 10.11],   // ドレッサーの机
+  [-35.02, -34.78, 8.88, 9.12],    // フロアランプ
+  [-34.32, -33.88, 12.03, 12.47],  // ドア横のプランター
   // v3.19: 山の頂上の物と斜面の木 (2D判定だが、同じx,zにはその高さでしか行けないので問題なし)
   [-45.36, -45.04, 0.8, 1.8],      // 頂上のベンチ (南)
   [-45.36, -45.04, -1.8, -0.8],    // 頂上のベンチ (北)
@@ -789,18 +838,13 @@ const REGIONS = [
 ];
 // v3.19: 地面の高さ。山 (中心(-47,0)・裾の半径12・頂上の半径3.5・高さ5.58) の上だけ高くなる
 function groundH(x, z) {
-  // v4.1.3: Bar AQUAのスツールの座面に乗れる
-  if (x > -21.6 && x < -20.9) {
-    for (const sz of [-22.0, -23.0, -24.0, -25.0]) {
-      const dx = x + 21.25, dz = z - sz;
-      if (dx * dx + dz * dz < 0.21 * 0.21) return 0.805;
-    }
-  }
+  // v4.2: スツールに乗る仕様 (v4.1.3) は撤回 — 天井が近くて三人称の視界が崩れるため、ベラの希望で元に戻した
   // v4.1.1: 室内の床板の上面の高さ (床に潜らないように)
   if (x >= -23.0 && x <= -18.6 && z >= -26.7 && z <= -20.3) return 0.10;   // Bar AQUA
   if (x >= -9.28 && x <= -5.52 && z >= 9.62 && z <= 13.38) return 0.06;    // ポクテハウス
   if (x >= -15.23 && x <= -9.87 && z >= 33.32 && z <= 37.68) return 0.06;  // レイナ亭
   if (x >= -38.78 && x <= -34.42 && z >= 14.52 && z <= 19.88) return 0.06; // イクオハウス
+  if (x >= -38.4 && x <= -34.4 && z >= 8.5 && z <= 13.3) return 0.06;      // ウメハウス (v4.2)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
   if (d <= 3.5) return 5.58;
@@ -1033,14 +1077,15 @@ function renderLoop() {
     const inPoku = pos.x > -9.3 && pos.x < -5.5 && pos.z > 9.6 && pos.z < 13.4;  // v3.15: ポクテハウスの中
     const inReina = pos.x > -15.1 && pos.x < -10.0 && pos.z > 33.5 && pos.z < 37.5;  // v3.16: レイナ亭の中
     const inIkuo = pos.x > -38.6 && pos.x < -34.5 && pos.z > 14.6 && pos.z < 19.8;  // v3.18: イクオハウスの中
+    const inUme = pos.x > -38.2 && pos.x < -34.6 && pos.z > 8.7 && pos.z < 13.1;  // v4.2: ウメハウスの中
     const onMtn = pos.x < -38.5 && pos.z > -13.5 && pos.z < 13.5;  // v3.19: 山とその周り
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))));
-    const camMaxX = inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))));
+    const camMinX = inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))));
+    const camMaxX = inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))));
-    const camMaxZ = inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))));
+    const camMinZ = inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))));
+    const camMaxZ = inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))));
     const myY = groundH(pos.x, pos.z);  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
@@ -1129,6 +1174,11 @@ function renderLoop() {
       fishBase.y + Math.sin(ft * 0.9) * 0.03,
       fishBase.z + fishC.z - (-fishC.x * s + fishC.z * c)
     );
+  }
+  // v4.2: 星のまたたき (2層を別々の速さでゆらす)
+  if (starLayers.length) {
+    const st = clock.elapsedTime;
+    for (const s of starLayers) s.m.opacity = s.baseOp * (0.82 + 0.18 * Math.sin(st * s.speed + s.phase));
   }
   // NPC (v3.14): 街の住人の自律行動
   updateNpcs(now, dt);
