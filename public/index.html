@@ -102,7 +102,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.4.2）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.5）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -319,6 +319,20 @@ let renderer, scene, camera, clock;
 let roomReady = false, inRoom = false;
 const dollScenes = {}; // type -> THREE.Object3D (original)
 let fish = null, fishBase = null, fishC = null, fishRotY = 0;   // v4.1: Bar AQUA の水槽の魚
+// v4.5: プレイランドの動く乗り物
+let playWheelP = null, playCarP = null, playVikP = null;
+let playWheelMesh = null, playCarMesh = null, playVikMesh = null;
+const playGondolas = [];   // {mesh, c (焼き込み中心), phi}
+const PLAY_HUB = { x: -34.8, y: 5.0, z: -28.6 };   // 観覧車の軸 (three座標)
+const PLAY_WR = 3.4, PLAY_GK = 0.49;               // 輪の半径 / ゴンドラ中心の垂れ下がり
+function pivotize(mesh, cx, cy, cz) {
+  if (!mesh || !mesh.parent) return null;
+  const pivot = new THREE.Group();
+  pivot.position.set(cx, cy, cz);
+  mesh.parent.add(pivot);
+  pivot.attach(mesh);   // メッシュのワールド姿勢を保ったままピボット配下へ (結合メッシュの変換が残っていても安全)
+  return pivot;
+}
 let starLayers = [];   // v4.2: 星空 (2層ドーム)
 const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
 const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
@@ -423,7 +437,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=43'],
+    ['room', 'assets/starryapa_room.glb?v=45'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -436,8 +450,20 @@ async function initRoom() {
           fish = o; fishBase = o.position.clone();
           fishC = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
         }
+        // v4.5: プレイランドの乗り物 (回転軸で包んでアニメーションする)
+        if (o.name === 'play_wheel') playWheelMesh = o;
+        if (o.name === 'play_carousel') playCarMesh = o;
+        if (o.name === 'play_viking') playVikMesh = o;
+        if (/^play_gondola_\d+$/.test(o.name)) {
+          const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+          playGondolas.push({ mesh: o, c, base: o.position.clone(), phi: Math.atan2((c.y - PLAY_HUB.y) + PLAY_GK, c.x - PLAY_HUB.x) });
+        }
       });
       scene.add(gltf.scene);
+      playWheelP = pivotize(playWheelMesh, PLAY_HUB.x, PLAY_HUB.y, PLAY_HUB.z);
+      playCarP = pivotize(playCarMesh, -34.8, 0, -21.4);
+      playVikP = pivotize(playVikMesh, -32.3, 3.1, -17.5);
+      playWheelMesh = playCarMesh = playVikMesh = null;
     } else {
       stripGroundPlanes(gltf.scene);
       dollScenes[key] = gltf.scene;
@@ -773,7 +799,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-11.55, -9.75, 32.72, 33.08],  // 自転車
   [-12.84, -12.36, 32.81, 33.29], // ドア横のプランター
   // v3.18: 公園の向こうの横の道＋酒屋＋イクオハウス
-  [-34.8, -31.8, -14.25, -13.55],  // 横の道の北端の生け垣
+  // v4.5: 横の道の北端の生け垣は撤去 (プレイランドの入口になった)
   [-34.8, -31.8, 30.45, 31.15],    // 横の道の南端の生け垣
   [-32.02, -31.78, 27.38, 27.62],  // 横の道の街灯 (南)
   [-32.02, -31.78, 13.38, 13.62],  // 横の道の街灯 (中)
@@ -826,7 +852,25 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   // v3.19.1: 公園の西側の生け垣 (中央の抜け口だけ通れる)
   [-30.35, -29.65, 1.55, 16.1],    // 公園奥の生け垣 (抜け口より南)
   [-30.35, -29.65, -16.1, -1.55],  // 公園奥の生け垣 (抜け口より北)
-  [-18.85, -18.35, -2.85, -0.55]   // 掲示板 (v4.0)
+  [-18.85, -18.35, -2.85, -0.55],  // 掲示板 (v4.0)
+  // v4.5: プレイランド (学校の西) 柵と乗り物
+  [-39.4, -30.2, -31.5, -31.3],    // 北の柵
+  [-39.4, -34.6, -14.65, -14.45],  // 南の柵 (ゲートより西)
+  [-31.9, -30.2, -14.65, -14.45],  // 南の柵 (ゲートより東)
+  [-39.45, -39.25, -31.4, -14.6],  // 西の柵
+  [-30.35, -30.15, -31.4, -14.6],  // 東の柵
+  [-37.1, -32.5, -30.1, -27.1],    // 観覧車の台
+  [-37.65, -31.95, -24.25, -18.55], // メリーゴーラウンド
+  [-33.0, -31.6, -19.2, -15.8],    // バイキング
+  [-38.1, -36.1, -17.45, -15.75],  // チケット小屋
+  [-38.85, -38.55, -30.75, -30.45], // 北西の木
+  [-31.05, -30.75, -30.75, -30.45], // 北東の木
+  [-39.17, -38.83, -15.57, -15.23], // ランプ (南西)
+  [-30.77, -30.43, -15.57, -15.23], // ランプ (南東)
+  [-39.17, -38.83, -25.77, -25.43], // ランプ (中西)
+  [-30.77, -30.43, -25.77, -25.43], // ランプ (中東)
+  [-31.0, -30.5, -20.8, -19.2],    // ベンチ (東)
+  [-38.25, -37.75, -25.4, -23.8]   // ベンチ (西)
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
@@ -859,6 +903,8 @@ const REGIONS = [
   [-29.9, -4.02, -31.0, 39.5],
   // v3.18: 公園の向こうの横の道と酒屋・イクオハウスの敷地 (西の地面の範囲内)
   [-39.3, -29.9, -14.3, 30.3],
+  // v4.5: プレイランド (学校の西・横の道の北の突き当り)
+  [-39.3, -30.3, -31.4, -14.0],
   // v3.19: 山とその周りの地面
   [-59.5, -39.3, -12.5, 12.5]
 ];
@@ -871,6 +917,7 @@ function groundH(x, z) {
   if (x >= -15.23 && x <= -9.87 && z >= 33.32 && z <= 37.68) return 0.06;  // レイナ亭
   if (x >= -38.78 && x <= -34.42 && z >= 14.52 && z <= 19.88) return 0.06; // イクオハウス
   if (x >= -38.4 && x <= -34.4 && z >= 8.5 && z <= 13.3) return 0.06;      // ウメハウス (v4.2)
+  if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
   if (d <= 3.5) return 5.58;
@@ -1212,6 +1259,24 @@ function renderLoop() {
   if (starLayers.length) {
     const st = clock.elapsedTime;
     for (const s of starLayers) s.m.opacity = s.baseOp * (0.82 + 0.18 * Math.sin(st * s.speed + s.phase));
+  }
+  // v4.5: プレイランド (観覧車はゆっくり回り、ゴンドラは常に水平。メリーゴーラウンド回転、バイキングは揺れる)
+  {
+    const pt = now * 0.001;
+    if (playWheelP) {
+      const th = pt * 0.3;
+      playWheelP.rotation.z = th;
+      for (const g of playGondolas) {
+        const a = g.phi + th;
+        g.mesh.position.set(
+          g.base.x + PLAY_HUB.x + PLAY_WR * Math.cos(a) - g.c.x,
+          g.base.y + PLAY_HUB.y + PLAY_WR * Math.sin(a) - PLAY_GK - g.c.y,
+          g.base.z + PLAY_HUB.z - g.c.z
+        );
+      }
+    }
+    if (playCarP) playCarP.rotation.y = pt * 0.5;
+    if (playVikP) playVikP.rotation.x = 0.45 * Math.sin(pt * 1.25);
   }
   // v4.3: 花火の進行
   updateFireworks(dt);
