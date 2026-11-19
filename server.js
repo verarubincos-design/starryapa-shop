@@ -1,4 +1,5 @@
-// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.0
+// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.1
+// v4.1: ベラ人形は店主専用に (登録時＋起動時に補正)。Bar AQUA の内装はクライアント/GLB側。
 // v4.0: アカウントと掲示板を Neon Postgres に保存 (環境変数 DATABASE_URL)。
 // DATABASE_URL が無い/接続できない場合は従来どおり data.json + メモリで動く。
 // pg ライブラリが無い環境でも落ちないよう、読み込み失敗時はフォールバックする。
@@ -206,11 +207,12 @@ async function apiRegister(body, res) {
   const loginId = String(body.loginId || '').trim();
   const password = String(body.password || '');
   const displayName = String(body.displayName || 'ベラ').trim().slice(0, 20) || 'ベラ';
-  const avatarType = AVATAR_TYPES.includes(body.avatarType) ? body.avatarType : 'vera';
+  let avatarType = AVATAR_TYPES.includes(body.avatarType) ? body.avatarType : 'girl';
   const avatarColor = AVATAR_COLORS.includes(body.avatarColor) ? body.avatarColor : 'violet';
   if (!loginId || loginId.length > 32) return sendJson(res, 400, { error: 'ログインIDを入力してください' });
   if (password.length < 4) return sendJson(res, 400, { error: 'パスワードは4文字以上にしてください' });
   const key = loginId.toLowerCase();
+  if (avatarType === 'vera' && key !== HOST_LOGIN_ID) avatarType = 'girl';   // ベラ人形は店主専用 (v4.1)
   if (accounts.has(key)) return sendJson(res, 409, { error: 'そのログインIDはすでに使われています' });
   const salt = crypto.randomBytes(16).toString('hex');
   const account = {
@@ -437,9 +439,31 @@ const server = http.createServer((req, res) => {
   res.writeHead(405); res.end();
 });
 
-// ---------- 起動 (DB初期化 → 店主の種まき → 待ち受け) ----------
+// ---------- ベラ人形は店主専用 (v4.1) ----------
+// 店主以外のアカウントが avatarType 'vera' になっていたら 'girl' に直す。
+// 起動時に既存アカウントを一括補正し、登録時にも強制する。
+async function normalizeAvatars() {
+  let fixed = 0;
+  for (const [key, a] of accounts) {
+    if (a.avatarType === 'vera' && key !== HOST_LOGIN_ID) {
+      a.avatarType = 'girl';
+      fixed++;
+      if (pool) {
+        try { await pool.query("UPDATE accounts SET avatar_type = 'girl' WHERE login_id = $1", [key]); }
+        catch (e) { console.error('アバター補正のDB保存に失敗:', e.message); }
+      }
+    }
+  }
+  if (fixed > 0) {
+    if (!pool) saveData();
+    console.log('ベラ人形の店主専用化: ' + fixed + ' 件のアカウントを女の子に補正しました');
+  }
+}
+
+// ---------- 起動 (DB初期化 → 店主の種まき → アバター補正 → 待ち受け) ----------
 (async () => {
   await storeInit();
   await ensureHostAccount();
+  await normalizeAvatars();
   server.listen(PORT, () => console.log('StarryApa shop listening on port ' + PORT + (pool ? ' (DB保存モード)' : ' (メモリ保存モード)')));
 })();
