@@ -89,7 +89,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.0）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.1）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -114,8 +114,8 @@
       <div class="hint">部屋で頭の上に表示される、みんなに見える名前</div>
       <label>アバター</label>
       <div class="avatar-choices" id="avatarChoices">
-        <button data-type="vera" class="active">ベラ</button>
-        <button data-type="girl">女の子</button>
+        <button data-type="vera" disabled title="店主専用です">ベラ（店主専用）</button>
+        <button data-type="girl" class="active">女の子</button>
         <button data-type="boy">男の子</button>
       </div>
       <label>色（ドレス／シャツ）</label>
@@ -241,7 +241,7 @@ function showLobby() {
 }
 
 // ---------------- 認証UI ----------------
-let regType = 'vera', regColor = 'violet';
+let regType = 'girl', regColor = 'violet';   // v4.1: ベラ人形は店主専用なので初期選択は女の子
 const $ = id => document.getElementById(id);
 $('tabLogin').onclick = () => {
   $('tabLogin').classList.add('active'); $('tabRegister').classList.remove('active');
@@ -292,6 +292,7 @@ if (isTouch) document.body.classList.add('touch');
 let renderer, scene, camera, clock;
 let roomReady = false, inRoom = false;
 const dollScenes = {}; // type -> THREE.Object3D (original)
+let fish = null, fishBase = null, fishC = null, fishRotY = 0;   // v4.1: Bar AQUA の水槽の魚
 const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
 const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
 const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb' };
@@ -349,19 +350,32 @@ async function initRoom() {
   const IL = new THREE.PointLight(0xffd9a0, 8, 6, 2);
   IL.position.set(-36.6, 1.7, 17.2);
   scene.add(IL);
+  // v4.1: Bar AQUA室内の明かり (カウンターの暖色＋水槽の青い光)
+  const AL = new THREE.PointLight(0xffb36b, 9, 7, 2);
+  AL.position.set(-21.6, 1.8, -23.5);
+  scene.add(AL);
+  const TL = new THREE.PointLight(0x66ccee, 7, 5, 2);
+  TL.position.set(-21.1, 1.5, -25.3);
+  scene.add(TL);
 
   const manager = new THREE.LoadingManager();
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=40'],
+    ['room', 'assets/starryapa_room.glb?v=41'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
   for (const [key, url] of jobs) {
     const gltf = await load(url);
     if (key === 'room') {
-      gltf.scene.traverse(o => { if (o.isMesh) { o.frustumCulled = true; } });
+      gltf.scene.traverse(o => {
+        if (o.isMesh) { o.frustumCulled = true; }
+        if (o.name === 'aqua_fish') {   // v4.1: 水槽の魚 (泳がせるために捕まえておく)
+          fish = o; fishBase = o.position.clone();
+          fishC = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+        }
+      });
       scene.add(gltf.scene);
     } else {
       stripGroundPlanes(gltf.scene);
@@ -635,8 +649,16 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-6.17, -5.83, -26.07, -25.73],  // ミアんちの木の幹
   [-16.10, -13.30, -30.08, -29.72], // 小道の北の突き当たりの生け垣
   [-16.57, -16.23, -19.67, -19.33], [-16.57, -16.23, -26.17, -25.83],
-  // v3.11: Bar AQUA（ミアんちの向かい・西側）
-  [-23.0, -18.6, -26.7, -20.3],   // Bar AQUAの建物
+  // v4.1: Bar AQUA（中に入れるバーに改装）壁と家具
+  [-23.05, -22.85, -26.75, -20.25], // 西の壁
+  [-23.05, -18.55, -26.75, -26.55], // 北の壁
+  [-23.05, -18.55, -20.45, -20.25], // 南の壁
+  [-18.75, -18.55, -21.95, -20.25], // 東の壁 (ドアより南)
+  [-18.75, -18.55, -26.75, -22.95], // 東の壁 (ドアより北)
+  [-22.5, -21.5, -25.85, -21.15],   // カウンター
+  [-22.4, -19.8, -26.42, -25.68],   // 水槽と台
+  [-20.15, -19.25, -25.65, -24.75], // テーブル (北)
+  [-20.15, -19.25, -22.15, -21.25], // テーブル (南)
   [-17.99, -17.51, -25.95, -24.85], [-17.99, -17.51, -27.15, -26.05], // 前の生け垣
   [-17.99, -17.51, -22.15, -21.05], [-17.99, -17.51, -20.95, -19.85],
   [-18.77, -17.53, -26.27, -25.03], // タヌキのオブジェ
@@ -1078,6 +1100,23 @@ function renderLoop() {
     if (r.bubble && now > r.bubbleUntil) {
       r.group.remove(r.bubble); r.bubble = null;
     }
+  }
+  // v4.1: Bar AQUA の水槽の魚がゆっくり泳ぐ (水槽の長さに合わせて往復)
+  // 魚の形はワールド座標で焼き込まれているので、反転は魚の中心まわりに補正して回す
+  if (fish && fishBase && fishC) {
+    const ft = now * 0.001;
+    const targetRot = (Math.cos(ft * 0.45) >= 0 ? 0 : Math.PI);
+    let dr = targetRot - fishRotY;
+    while (dr > Math.PI) dr -= Math.PI * 2;
+    while (dr < -Math.PI) dr += Math.PI * 2;
+    fishRotY += dr * 0.04;
+    const c = Math.cos(fishRotY), s = Math.sin(fishRotY);
+    fish.rotation.y = fishRotY;
+    fish.position.set(
+      fishBase.x + fishC.x - (fishC.x * c + fishC.z * s) + Math.sin(ft * 0.45) * 0.45,
+      fishBase.y + Math.sin(ft * 0.9) * 0.03,
+      fishBase.z + fishC.z - (-fishC.x * s + fishC.z * c)
+    );
   }
   // NPC (v3.14): 街の住人の自律行動
   updateNpcs(now, dt);
