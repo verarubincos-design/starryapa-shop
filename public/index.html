@@ -71,6 +71,16 @@
   /* ---------- 花火 (v4.3) ---------- */
   #fwBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(38,42,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.75); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #fwBtn:disabled { opacity: 0.55; }
+  #craneBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(85,48,104,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #cranePanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(24,16,30,0.96); border: 1px solid rgba(217,165,255,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
+  #cranePanel h2 { font-size: 15px; color: #e6c8ff; margin-bottom: 8px; }
+  #craneCanvas { display: block; width: 100%; border-radius: 8px; background: #2b2136; }
+  #craneMsg { min-height: 2.4em; margin-top: 8px; color: #ffe9b8; }
+  .craneBtns { display: flex; gap: 8px; margin-top: 6px; }
+  .craneBtns button { flex: 1; padding: 10px 0; border-radius: 10px; border: 1px solid rgba(255,217,160,0.5); background: rgba(85,48,104,0.9); color: #fff; font-weight: bold; font-size: 14px; touch-action: none; }
+  .craneBtns button:disabled { opacity: 0.45; }
+  #btnCraneClose { flex: 0 0 76px; background: rgba(60,50,66,0.9); }
+  #craneBag { margin-top: 8px; color: #cdbcf0; font-size: 12px; }
   #boardPanel { position: fixed; left: 50%; top: 6%; transform: translateX(-50%); z-index: 23; width: min(92vw, 440px); max-height: 82vh; display: flex; flex-direction: column; background: rgba(30,18,20,0.95); border: 1px solid rgba(255,217,160,0.5); border-radius: 14px; padding: 14px 16px; font-size: 13px; }
   #boardPanel h2 { font-size: 15px; color: #ffd9a0; margin-bottom: 8px; }
   #boardList { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
@@ -92,7 +102,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.3.2）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.4.1）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -180,6 +190,18 @@
 </div>
 <button id="boardBtn" class="hidden">📋 掲示板を見る</button>
 <button id="fwBtn" class="hidden">🎆 花火を発射</button>
+<button id="craneBtn" class="hidden">🕹 クレーンゲーム</button>
+<div id="cranePanel" class="hidden">
+  <h2>🕹 クレーンゲーム</h2>
+  <canvas id="craneCanvas" width="360" height="300"></canvas>
+  <div id="craneMsg">「いどう」を長押しでクレーンを動かして、離したら「つかむ」を押してね</div>
+  <div class="craneBtns">
+    <button id="btnCraneMove">▶ いどう</button>
+    <button id="btnCraneDrop">つかむ</button>
+    <button id="btnCraneClose">とじる</button>
+  </div>
+  <div id="craneBag"></div>
+</div>
 <div id="boardPanel" class="hidden">
   <h2>掲示板</h2>
   <div id="boardList"></div>
@@ -885,8 +907,9 @@ function collide(nx, nz) {
 
 const keys = {};
 let chatFocused = false;
+let craneOpen = false;   // v4.4: クレーンゲームのパネル表示中は移動しない
 addEventListener('keydown', e => {
-  if (chatFocused) return;
+  if (chatFocused || craneOpen) return;
   keys[e.code] = true;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
@@ -1063,8 +1086,8 @@ function renderLoop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // 移動
   let mx = 0, mz = 0;
-  const fwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
-  const str = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const fwd = craneOpen ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = craneOpen ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   mx = (-sin * fwd + cos * str);
   mz = (-cos * fwd - sin * str);
@@ -1454,7 +1477,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1596,11 +1619,14 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
   $('fwBtn').classList.toggle('hidden', df > 3.0);
+  let dc = 1e9;
+  for (const s of CRANE_SPOTS) dc = Math.min(dc, Math.hypot(pos.x - s.x, pos.z - s.z));
+  $('craneBtn').classList.toggle('hidden', dc > 2.3 || craneOpen);
 }, 300);
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
@@ -1768,9 +1794,273 @@ $('fwBtn').onclick = async () => {
   setTimeout(() => { btn.textContent = '🎆 花火を発射'; fwBusy = false; }, 2000);
 };
 
+// ---------- クレーンゲーム (v4.4): ゲーセンとミあんち前の2台が実際に遊べる (端末ごとに景品を記録) ----------
+const CRANE_SPOTS = [{ x: -20.3, z: 24.8 }, { x: -10.07, z: -24.8 }];   // ゲーセン / ミあんち前
+const PRIZE_TYPES = [
+  { id: 'hoshi', name: 'ほしのぬいぐるみ', short: 'ほし', color: '#ffd94d' },
+  { id: 'tsuki', name: 'つきのぬいぐるみ', short: 'つき', color: '#ffe9a8' },
+  { id: 'kuma', name: 'くまのぬいぐるみ', short: 'くま', color: '#c98d5e' },
+  { id: 'neko', name: 'ねこのぬいぐるみ', short: 'ねこ', color: '#f2f2f5' },
+  { id: 'usagi', name: 'うさぎのぬいぐるみ', short: 'うさぎ', color: '#ffb7d5' },
+  { id: 'sakana', name: 'さかなのぬいぐるみ', short: 'さかな', color: '#7ec8ff' },
+  { id: 'switch2', name: 'ゲーム機（スイッチ2）', short: 'スイッチ2', color: '#3a3f4a' }
+];
+let craneBag = {};
+try { craneBag = JSON.parse(localStorage.getItem('starryCraneBag') || '{}'); } catch (e) { craneBag = {}; }
+let crane = null;
+const CR = { railY: 42, restY: 66, homeX: 70, chuteX: 30, floorY: 252, minX: 58, maxX: 338 };
+
+function craneJudge(dx, hard) {   // つかみ判定: 中心が合えば必ず、近ければ半分 (重い景品は少し難しい)
+  const a = Math.abs(dx);
+  if (hard) { if (a <= 18) return true; if (a <= 30) return Math.random() < 0.4; return false; }
+  if (a <= 24) return true;
+  if (a <= 38) return Math.random() < 0.5;
+  return false;
+}
+function craneNewPrize(x, hasSwitch) {
+  let t;
+  if (!hasSwitch && Math.random() < 0.08) t = PRIZE_TYPES[6];   // レア景品スイッチ2 (8%、台の中に最大1つ)
+  else t = PRIZE_TYPES[Math.floor(Math.random() * 6)];
+  return { x, y: 230, type: t.id, name: t.name, color: t.color, held: false, gone: false };
+}
+function craneResetPrizes() {
+  const out = [];
+  let hasSwitch = false;
+  for (const x of [78, 128, 178, 228, 278, 322]) {
+    const p = craneNewPrize(x + (Math.random() * 10 - 5), hasSwitch);
+    if (p.type === 'switch2') hasSwitch = true;
+    out.push(p);
+  }
+  return out;
+}
+function craneBagText() {
+  const parts = [];
+  for (const t of PRIZE_TYPES) if (craneBag[t.id]) parts.push(t.short + '×' + craneBag[t.id]);
+  return parts.length ? 'とった景品: ' + parts.join('・') : 'とった景品: まだなし';
+}
+function craneJingle() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    for (const [f, dt] of [[523.25, 0], [659.25, 0.09], [783.99, 0.18], [1046.5, 0.27]]) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + dt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.35);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t0 + dt); o.stop(t0 + dt + 0.4);
+    }
+  } catch (e) {}
+}
+function openCrane() {
+  for (const k in keys) keys[k] = false;
+  craneOpen = true;
+  $('cranePanel').classList.remove('hidden');
+  $('craneBtn').classList.add('hidden');
+  crane = { prizes: craneResetPrizes(), x: CR.homeX, y: CR.restY, phase: 'ready', phaseT: 0,
+            sway: 0, swayV: 0, held: null, willHold: false, moving: false, target: null,
+            targetY: 238, gx: CR.homeX, raf: 0, lastTs: performance.now(), lastPhase: '' };
+  $('craneMsg').textContent = '「いどう」を長押しでクレーンを動かして、離したら「つかむ」を押してね';
+  $('craneBag').textContent = craneBagText();
+  crane.raf = requestAnimationFrame(craneTick);
+}
+function closeCrane() {
+  craneOpen = false;
+  $('cranePanel').classList.add('hidden');
+  if (crane && crane.raf) cancelAnimationFrame(crane.raf);
+  crane = null;
+}
+function craneStartDrop() {
+  const c = crane;
+  if (!c || c.phase !== 'ready') return;
+  c.moving = false;
+  c.gx = c.x + Math.sin(c.sway) * 40;
+  let best = null, bd = 1e9;
+  for (const p of c.prizes) {
+    if (p.gone) continue;
+    const d = Math.abs(p.x - c.gx);
+    if (d < bd) { bd = d; best = p; }
+  }
+  c.target = (best && bd <= 44) ? best : null;
+  c.targetY = c.target ? c.target.y - 30 : 238;
+  c.phase = 'drop'; c.phaseT = 0;
+}
+function craneTick(ts) {
+  if (!crane) return;
+  crane.raf = requestAnimationFrame(craneTick);
+  const c = crane;
+  const dt = Math.min((ts - c.lastTs) / 1000, 0.05); c.lastTs = ts;
+  // 振り子のゆれ: 動いている間は遅れて傾き、止まると揺れながら収まる
+  const swayTarget = (c.moving && c.phase === 'ready') ? -0.17 : 0;
+  c.swayV += ((swayTarget - c.sway) * 26 - c.swayV * (c.moving ? 4 : 1.6)) * dt;
+  c.sway += c.swayV * dt;
+  if (c.phase === 'ready') {
+    if (c.moving) c.x = Math.min(c.x + 135 * dt, CR.maxX);
+  } else if (c.phase === 'drop') {
+    c.y += 155 * dt;
+    if (c.y >= c.targetY) {
+      c.y = c.targetY; c.phase = 'close'; c.phaseT = 0;
+      c.willHold = c.target ? craneJudge(c.gx - c.target.x, c.target.type === 'switch2') : false;
+    }
+  } else if (c.phase === 'close') {
+    c.phaseT += dt;
+    if (c.phaseT >= 0.45) {
+      if (c.willHold && c.target) { c.held = c.target; c.target.held = true; }
+      else if (c.target) $('craneMsg').textContent = 'おしい！ すべっちゃった…';
+      else $('craneMsg').textContent = 'なにもなかった…';
+      c.phase = 'rise';
+    }
+  } else if (c.phase === 'rise') {
+    c.y -= 175 * dt;
+    if (c.y <= CR.restY) { c.y = CR.restY; c.phase = 'return'; }
+  } else if (c.phase === 'return') {
+    c.x -= 200 * dt;
+    if (c.x <= CR.chuteX) { c.x = CR.chuteX; c.phase = c.held ? 'release' : 'backhome'; c.phaseT = 0; }
+  } else if (c.phase === 'release') {
+    c.phaseT += dt;
+    if (c.held) {
+      c.held.y += 320 * dt;
+      if (c.held.y >= 238) {
+        const got = c.held; got.gone = true; got.held = false; c.held = null;
+        craneBag[got.type] = (craneBag[got.type] || 0) + 1;
+        try { localStorage.setItem('starryCraneBag', JSON.stringify(craneBag)); } catch (e) {}
+        $('craneBag').textContent = craneBagText();
+        $('craneMsg').textContent = got.type === 'switch2' ? 'すごい！！ ゲーム機（スイッチ2）をとれた！🎉' : 'とれた！ ' + got.name + ' 🎉';
+        craneJingle();
+        c.prizes.push(craneNewPrize(got.x, c.prizes.some(p => p.type === 'switch2' && !p.gone)));
+      }
+    }
+    if ((!c.held && c.phaseT >= 0.3) || c.phaseT >= 1.2) c.phase = 'backhome';
+  } else if (c.phase === 'backhome') {
+    c.x += 200 * dt;
+    if (c.x >= CR.homeX) {
+      c.x = CR.homeX; c.phase = 'ready';
+      if (!c.held) $('craneMsg').textContent = 'もう一回どうぞ。「いどう」長押し→「つかむ」';
+    }
+  }
+  if (c.held && c.phase !== 'release') { c.held.x = c.x + Math.sin(c.sway) * 40; c.held.y = c.y + 34; }
+  if (c.phase !== c.lastPhase) {
+    c.lastPhase = c.phase;
+    const ready = c.phase === 'ready';
+    $('btnCraneMove').disabled = !ready;
+    $('btnCraneDrop').disabled = !ready;
+  }
+  craneDraw();
+}
+function craneDrawPrize(g, p) {
+  if (!p.held) {   // 影
+    g.fillStyle = 'rgba(0,0,0,0.30)';
+    g.beginPath(); g.ellipse(p.x, 250, 20, 5, 0, 0, Math.PI * 2); g.fill();
+  }
+  g.fillStyle = p.color;
+  g.strokeStyle = 'rgba(60,30,10,0.45)'; g.lineWidth = 2;
+  const x = p.x, y = p.y;
+  if (p.type === 'hoshi') {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? 21 : 9, a = -Math.PI / 2 + i * Math.PI / 5;
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      i === 0 ? g.moveTo(px, py) : g.lineTo(px, py);
+    }
+    g.closePath(); g.fill(); g.stroke();
+  } else if (p.type === 'tsuki') {
+    g.beginPath(); g.arc(x, y, 19, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = '#2b2136';
+    g.beginPath(); g.arc(x + 8, y - 5, 15, 0, Math.PI * 2); g.fill();
+    g.fillStyle = p.color;
+  } else if (p.type === 'sakana') {
+    g.beginPath(); g.moveTo(x + 16, y); g.lineTo(x + 28, y - 11); g.lineTo(x + 28, y + 11); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.ellipse(x, y, 20, 14, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = '#26303c';
+    g.beginPath(); g.arc(x - 9, y - 2, 2.4, 0, Math.PI * 2); g.fill();
+    return;
+  } else if (p.type === 'switch2') {
+    const cy = y + 9;
+    const rr = (x0, y0, w, h, r) => { g.beginPath(); g.moveTo(x0 + r, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, r); g.arcTo(x0 + w, y0 + h, x0, y0 + h, r); g.arcTo(x0, y0 + h, x0, y0, r); g.arcTo(x0, y0, x0 + w, y0, r); g.closePath(); };
+    rr(x - 27, cy - 13, 54, 26, 9); g.fillStyle = '#3a3f4a'; g.fill(); g.stroke();
+    g.fillStyle = '#00c3e3'; g.fillRect(x - 26, cy - 10, 10, 20);
+    g.fillStyle = '#ff5a4d'; g.fillRect(x + 16, cy - 10, 10, 20);
+    g.fillStyle = '#bfe8ff'; g.fillRect(x - 14, cy - 9, 28, 18);
+    g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(x - 14, cy - 9, 28, 5);
+    g.fillStyle = '#20242c';
+    g.beginPath(); g.arc(x - 21, cy - 3, 2.6, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + 21, cy - 4, 1.8, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + 24, cy + 1, 1.8, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + 18, cy + 1, 1.8, 0, Math.PI * 2); g.fill();
+    return;
+  } else {
+    if (p.type === 'kuma') {
+      for (const s of [-1, 1]) { g.beginPath(); g.arc(x + s * 13, y - 15, 7, 0, Math.PI * 2); g.fill(); g.stroke(); }
+    } else if (p.type === 'neko') {
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(x + s * 8, y - 13); g.lineTo(x + s * 16, y - 24); g.lineTo(x + s * 17, y - 10); g.closePath(); g.fill(); g.stroke(); }
+    } else if (p.type === 'usagi') {
+      for (const s of [-1, 1]) { g.beginPath(); g.ellipse(x + s * 9, y - 24, 5, 12, s * 0.15, 0, Math.PI * 2); g.fill(); g.stroke(); }
+    }
+    g.beginPath(); g.arc(x, y, 19, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
+  // 顔
+  g.fillStyle = '#26303c';
+  g.beginPath(); g.arc(x - 6.5, y - 2, 2.2, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(x + 6.5, y - 2, 2.2, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#26303c'; g.lineWidth = 1.6;
+  g.beginPath(); g.arc(x, y + 3.5, 4, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+}
+function craneDraw() {
+  const c = crane; if (!c) return;
+  const g = $('craneCanvas').getContext('2d');
+  g.clearRect(0, 0, 360, 300);
+  const grad = g.createLinearGradient(0, 0, 0, 300);
+  grad.addColorStop(0, '#3a2c4e'); grad.addColorStop(1, '#241a33');
+  g.fillStyle = grad; g.fillRect(0, 0, 360, 300);
+  // 取り出し口 (左下)
+  g.fillStyle = '#191021'; g.fillRect(4, 188, 50, 64);
+  g.strokeStyle = 'rgba(230,200,255,0.5)'; g.lineWidth = 2; g.strokeRect(4, 188, 50, 64);
+  g.fillStyle = '#cdbcf0'; g.font = '10px sans-serif'; g.fillText('とりくち', 10, 182);
+  // 床と前面パネル
+  g.fillStyle = '#17101f'; g.fillRect(0, CR.floorY, 360, 48);
+  g.fillStyle = '#55306b'; g.fillRect(0, 268, 360, 32);
+  g.fillStyle = '#ffd94d'; g.beginPath(); g.arc(330, 284, 7, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#2b2136'; g.fillRect(300, 280, 16, 8);
+  // 景品
+  for (const p of c.prizes) if (!p.gone && !p.held) craneDrawPrize(g, p);
+  if (c.held) craneDrawPrize(g, c.held);
+  // レールとクレーン
+  g.fillStyle = '#120c1a'; g.fillRect(0, CR.railY - 6, 360, 10);
+  g.fillStyle = '#8d6bb5'; g.fillRect(c.x - 13, CR.railY - 9, 26, 14);
+  const gx = c.x + Math.sin(c.sway) * 40;
+  g.strokeStyle = '#d9c8f5'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(c.x, CR.railY + 4); g.lineTo(gx, c.y); g.stroke();
+  const open = (c.phase === 'ready' || c.phase === 'drop') ? 9 : 3;
+  g.fillStyle = '#e8ddfa'; g.beginPath(); g.arc(gx, c.y, 5, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#e8ddfa'; g.lineWidth = 3;
+  for (const s of [-1, 0, 1]) {
+    g.beginPath(); g.moveTo(gx + s * 4, c.y + 2);
+    g.lineTo(gx + s * open + s * 3, c.y + 16);
+    g.lineTo(gx + s * open - (s === 0 ? 0 : s * 4), c.y + 23);
+    g.stroke();
+  }
+  // ガラスのツヤ
+  g.fillStyle = 'rgba(255,255,255,0.05)';
+  g.beginPath(); g.moveTo(40, 0); g.lineTo(120, 0); g.lineTo(60, 300); g.lineTo(0, 300); g.lineTo(0, 60); g.closePath(); g.fill();
+}
+$('craneBtn').onclick = openCrane;
+$('btnCraneClose').onclick = closeCrane;
+$('btnCraneDrop').onclick = craneStartDrop;
+{
+  const mb = $('btnCraneMove');
+  const on = e => { e.preventDefault(); if (crane && crane.phase === 'ready') crane.moving = true; };
+  const off = () => { if (crane) crane.moving = false; };
+  mb.addEventListener('pointerdown', on);
+  mb.addEventListener('pointerup', off);
+  mb.addEventListener('pointerleave', off);
+  mb.addEventListener('pointercancel', off);
+}
+
 // FF14式: 部屋の中で Enter を押したらチャット入力にフォーカス (v3.4)
 addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || !inRoom || chatFocused) return;
+  if (e.key !== 'Enter' || !inRoom || chatFocused || craneOpen) return;
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae !== $('chatInput')) return;
   e.preventDefault();
