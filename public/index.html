@@ -92,7 +92,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.3）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.3.2）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -1608,12 +1608,14 @@ const fwFx = [];   // 進行中の花火
 const FW_COLORS = [0xffc740, 0xff7396, 0x73bfff, 0x7dff9e, 0xd9a5ff];
 
 function startFwShow() {
-  for (let i = 0; i < 5; i++) {
+  // v4.3.1: 上がる場所は山の真上ではなく公園 (StarryApa方向) の上空に。山頂から見下ろして見える位置
+  for (let i = 0; i < 8; i++) {
     fwFx.push({
-      kind: 'shell', t: -i * 0.45,
-      x: -47 + (Math.random() * 10 - 5), z: Math.random() * 10 - 5,
-      topY: 24 + Math.random() * 9,
-      color: FW_COLORS[i % FW_COLORS.length], ring: i === 3, pts: null, vel: null, age: 0
+      kind: 'shell', t: -i * 0.35,
+      x: -25 + (Math.random() * 8 - 4), z: -0.5 + (Math.random() * 6 - 3),
+      topY: 20 + Math.random() * 7,
+      color: FW_COLORS[i % FW_COLORS.length], ring: i === 5, big: i === 7,
+      pts: null, vel: null, age: 0, life: 2.4
     });
   }
 }
@@ -1629,25 +1631,82 @@ function fwMakePoints(n, color, size, sizeAttenuation) {
   return p;
 }
 
-function fwBurst(fx) {
-  const N = 110;
-  const pts = fwMakePoints(N, fx.color, 0.55, true);
-  const posA = pts.geometry.attributes.position.array;
-  const vel = new Float32Array(N * 3);
-  for (let i = 0; i < N; i++) {
-    posA[i * 3] = fx.x; posA[i * 3 + 1] = fx.topY; posA[i * 3 + 2] = fx.z;
-    if (fx.ring) {   // 4発目だけ輪の形に開く
-      const a = (i / N) * Math.PI * 2, sp = 6.5 + Math.random() * 1.5;
-      vel[i * 3] = Math.cos(a) * sp; vel[i * 3 + 1] = (Math.random() - 0.5) * 0.8; vel[i * 3 + 2] = Math.sin(a) * sp;
-    } else {
-      const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
-      const sp = 4.0 + Math.random() * 4.5;
-      vel[i * 3] = Math.sin(ph) * Math.cos(th) * sp;
-      vel[i * 3 + 1] = Math.cos(ph) * sp;
-      vel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * sp;
+function fwBoom(big) {
+  // v4.3.2: 花火の音 (低いドン＋破裂のノイズ＋遅れてパチパチ)。ドアベルと同じ audioCtx を使う
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    const vol = big ? 0.55 : 0.38;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(130, t0);
+    o.frequency.exponentialRampToValueAtTime(38, t0 + 0.45);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0); o.stop(t0 + 0.75);
+    const nb = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.35), audioCtx.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nd.length);
+    const ns = audioCtx.createBufferSource(); ns.buffer = nb;
+    const nf = audioCtx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 900;
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(vol * 0.7, t0);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+    ns.connect(nf).connect(ng).connect(audioCtx.destination);
+    ns.start(t0);
+    for (let i = 0; i < 7; i++) {
+      const dt = 0.15 + Math.random() * 1.1;
+      const cb = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.03), audioCtx.sampleRate);
+      const cd = cb.getChannelData(0);
+      for (let j = 0; j < cd.length; j++) cd[j] = (Math.random() * 2 - 1) * (1 - j / cd.length);
+      const cs = audioCtx.createBufferSource(); cs.buffer = cb;
+      const cf = audioCtx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 1800 + Math.random() * 1800; cf.Q.value = 1.2;
+      const cg = audioCtx.createGain(); cg.gain.value = 0.05 + Math.random() * 0.05;
+      cs.connect(cf).connect(cg).connect(audioCtx.destination);
+      cs.start(t0 + dt);
     }
+  } catch (e) {}
+}
+
+function fwBurst(fx) {
+  fwBoom(fx.big);
+  // v4.3.1: 粒を増やして大きく開く+中心の閃光と内側の芯でもう少し豪華に
+  const flash = { kind: 'flash', t: 0, x: fx.x, topY: fx.topY, z: fx.z, color: 0xffffff,
+                  pts: fwMakePoints(1, 0xffffff, 30, false), vel: null, age: 0, life: 0.3 };
+  flash.pts.geometry.attributes.position.array.set([fx.x, fx.topY, fx.z]);
+  flash.pts.geometry.attributes.position.needsUpdate = true;
+  fwFx.push(flash);
+  const layers = fx.ring
+    ? [{ n: 170, spMin: 8.0, spVar: 2.0, size: 0.7, life: 2.4, tint: 0 }]
+    : [{ n: fx.big ? 260 : 170, spMin: 5.0, spVar: 5.0, size: 0.7, life: 2.4, tint: 0 },
+       { n: 70, spMin: 1.8, spVar: 2.0, size: 0.6, life: 1.7, tint: 0.55 }];
+  let first = true;
+  for (const L of layers) {
+    const col = new THREE.Color(fx.color);
+    if (L.tint) col.lerp(new THREE.Color(0xffffff), L.tint);
+    const pts = fwMakePoints(L.n, col.getHex(), L.size, true);
+    const posA = pts.geometry.attributes.position.array;
+    const vel = new Float32Array(L.n * 3);
+    for (let i = 0; i < L.n; i++) {
+      posA[i * 3] = fx.x; posA[i * 3 + 1] = fx.topY; posA[i * 3 + 2] = fx.z;
+      if (fx.ring) {   // 輪の形に開く
+        const a = (i / L.n) * Math.PI * 2, sp = L.spMin + Math.random() * L.spVar;
+        vel[i * 3] = Math.cos(a) * sp; vel[i * 3 + 1] = (Math.random() - 0.5) * 0.8; vel[i * 3 + 2] = Math.sin(a) * sp;
+      } else {
+        const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+        const sp = L.spMin + Math.random() * L.spVar;
+        vel[i * 3] = Math.sin(ph) * Math.cos(th) * sp;
+        vel[i * 3 + 1] = Math.cos(ph) * sp;
+        vel[i * 3 + 2] = Math.sin(ph) * Math.sin(th) * sp;
+      }
+    }
+    if (first) { fx.kind = 'burst'; fx.pts = pts; fx.vel = vel; fx.age = 0; fx.life = L.life; first = false; }
+    else fwFx.push({ kind: 'burst', t: 0, x: fx.x, topY: fx.topY, z: fx.z, color: fx.color,
+                     pts, vel, age: 0, life: L.life });
   }
-  fx.kind = 'burst'; fx.pts = pts; fx.vel = vel; fx.age = 0;
 }
 
 function fwDispose(fx) {
@@ -1661,12 +1720,16 @@ function updateFireworks(dt) {
     if (fx.t < 0) continue;
     if (fx.kind === 'shell') {
       if (!fx.pts) fx.pts = fwMakePoints(1, fx.color, 6, false);
-      const k = Math.min(fx.t / 0.85, 1);
-      const y = 6.2 + (fx.topY - 6.2) * (1 - Math.pow(1 - k, 3));
+      const k = Math.min(fx.t / 0.95, 1);
+      const y = 1.0 + (fx.topY - 1.0) * (1 - Math.pow(1 - k, 3));
       const posA = fx.pts.geometry.attributes.position.array;
       posA[0] = fx.x; posA[1] = y; posA[2] = fx.z;
       fx.pts.geometry.attributes.position.needsUpdate = true;
       if (k >= 1) { fwDispose(fx); fwBurst(fx); }
+    } else if (fx.kind === 'flash') {
+      fx.age += dt;
+      fx.pts.material.opacity = Math.max(0, 1 - fx.age / fx.life);
+      if (fx.age >= fx.life) { fwDispose(fx); fwFx.splice(i, 1); }
     } else {
       fx.age += dt;
       const posA = fx.pts.geometry.attributes.position.array;
@@ -1677,8 +1740,8 @@ function updateFireworks(dt) {
         posA[j] += fx.vel[j] * dt; posA[j + 1] += fx.vel[j + 1] * dt; posA[j + 2] += fx.vel[j + 2] * dt;
       }
       fx.pts.geometry.attributes.position.needsUpdate = true;
-      fx.pts.material.opacity = Math.max(0, 1 - fx.age / 1.9);
-      if (fx.age >= 1.9) { fwDispose(fx); fwFx.splice(i, 1); }
+      fx.pts.material.opacity = Math.max(0, 1 - fx.age / fx.life);
+      if (fx.age >= fx.life) { fwDispose(fx); fwFx.splice(i, 1); }
     }
   }
 }
