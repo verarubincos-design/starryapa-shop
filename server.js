@@ -1,4 +1,5 @@
-// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.1
+// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.3
+// v4.3: 山頂の発射ボタンで花火 (全員に /api/players 経由で放送、クールダウン10秒)。星空とウメハウスはクライアント/GLB側。
 // v4.1: ベラ人形は店主専用に (登録時＋起動時に補正)。Bar AQUA の内装はクライアント/GLB側。
 // v4.0: アカウントと掲示板を Neon Postgres に保存 (環境変数 DATABASE_URL)。
 // DATABASE_URL が無い/接続できない場合は従来どおり data.json + メモリで動く。
@@ -185,6 +186,8 @@ const PRESENCE_KEEP_MS = 180000;
 const EMOTES = ['raise', 'jump', 'bow', 'joy'];
 let messages = [];           // {id, name, text, ts}
 let nextMsgId = 1;
+let fireworksAt = 0;         // v4.3: 花火が最後に発射された時刻 (全員への放送は /api/players の応答に載せる)
+const FIREWORKS_COOLDOWN_MS = 10000;
 
 const AVATAR_TYPES = ['vera', 'girl', 'boy'];
 const AVATAR_COLORS = ['violet', 'red', 'blue', 'green', 'yellow'];
@@ -295,7 +298,19 @@ function apiPlayers(body, res) {
       joinedAt: p.joinedAt, emote: p.emote, emoteAt: p.emoteAt
     });
   }
-  return sendJson(res, 200, { players: list });
+  return sendJson(res, 200, { players: list, fireworksAt });
+}
+
+// v4.3: 山頂の発射ボタン。押した本人には即時応答し、他の全員には /api/players 経由で伝わる
+function apiFireworks(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const now = Date.now();
+  if (now - fireworksAt < FIREWORKS_COOLDOWN_MS) {
+    return sendJson(res, 429, { error: 'cooldown', retryAfterMs: FIREWORKS_COOLDOWN_MS - (now - fireworksAt) });
+  }
+  fireworksAt = now;
+  return sendJson(res, 200, { ok: true, fireworksAt });
 }
 
 function apiEmote(body, res) {
@@ -377,6 +392,7 @@ const API = {
   '/api/heartbeat': apiHeartbeat,
   '/api/players': apiPlayers,
   '/api/emote': apiEmote,
+  '/api/fireworks': apiFireworks,
   '/api/say': apiSay,
   '/api/messages': apiMessages,
   '/api/leave': apiLeave,
