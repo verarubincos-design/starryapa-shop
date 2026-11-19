@@ -89,7 +89,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.1）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.1.1）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -789,6 +789,11 @@ const REGIONS = [
 ];
 // v3.19: 地面の高さ。山 (中心(-47,0)・裾の半径12・頂上の半径3.5・高さ5.58) の上だけ高くなる
 function groundH(x, z) {
+  // v4.1.1: 室内の床板の上面の高さ (床に潜らないように)
+  if (x >= -23.0 && x <= -18.6 && z >= -26.7 && z <= -20.3) return 0.10;   // Bar AQUA
+  if (x >= -9.28 && x <= -5.52 && z >= 9.62 && z <= 13.38) return 0.06;    // ポクテハウス
+  if (x >= -15.23 && x <= -9.87 && z >= 33.32 && z <= 37.68) return 0.06;  // レイナ亭
+  if (x >= -38.78 && x <= -34.42 && z >= 14.52 && z <= 19.88) return 0.06; // イクオハウス
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
   if (d <= 3.5) return 5.58;
