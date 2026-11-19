@@ -72,6 +72,7 @@
   #fwBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(38,42,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.75); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #fwBtn:disabled { opacity: 0.55; }
   #craneBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(85,48,104,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #rideBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,44,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #cranePanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(24,16,30,0.96); border: 1px solid rgba(217,165,255,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
   #cranePanel h2 { font-size: 15px; color: #e6c8ff; margin-bottom: 8px; }
   #craneCanvas { display: block; width: 100%; border-radius: 8px; background: #2b2136; }
@@ -102,7 +103,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.5.1）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.6）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -191,6 +192,7 @@
 <button id="boardBtn" class="hidden">📋 掲示板を見る</button>
 <button id="fwBtn" class="hidden">🎆 花火を発射</button>
 <button id="craneBtn" class="hidden">🕹 クレーンゲーム</button>
+<button id="rideBtn" class="hidden">🎠 メリーゴーラウンドに乗る</button>
 <div id="cranePanel" class="hidden">
   <h2>🕹 クレーンゲーム</h2>
   <canvas id="craneCanvas" width="360" height="300"></canvas>
@@ -437,7 +439,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=45'],
+    ['room', 'assets/starryapa_room.glb?v=452'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -869,8 +871,8 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-30.77, -30.43, -15.57, -15.23], // ランプ (南東)
   [-39.17, -38.83, -25.77, -25.43], // ランプ (中西)
   [-30.77, -30.43, -25.77, -25.43], // ランプ (中東)
-  [-31.0, -30.5, -20.8, -19.2],    // ベンチ (東)
-  [-38.25, -37.75, -25.4, -23.8]   // ベンチ (西)
+  [-37.2, -35.6, -26.85, -26.35],  // ベンチ (広場・西) v4.5.2
+  [-34.0, -32.4, -26.85, -26.35]   // ベンチ (広場・東) v4.5.2
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
@@ -1065,7 +1067,7 @@ async function pollPlayers() {
     }
     const r = remotes.get(p.id);
     if (r) {
-      r.tgt.x = p.x; r.tgt.z = p.z; r.tgt.yaw = p.yaw;
+      r.tgt.x = p.x; r.tgt.z = p.z; r.tgt.yaw = p.yaw; r.ry = p.ry || 0;
       if (p.emote && p.emoteAt && p.emoteAt !== r.lastEmoteAt) {
         r.lastEmoteAt = p.emoteAt;
         restoreArm(r); // 前の「手をあげる」が途中でも腕を戻してから次へ
@@ -1133,8 +1135,8 @@ function renderLoop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // 移動
   let mx = 0, mz = 0;
-  const fwd = craneOpen ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
-  const str = craneOpen ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const fwd = (craneOpen || ride) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = (craneOpen || ride) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   mx = (-sin * fwd + cos * str);
   mz = (-cos * fwd - sin * str);
@@ -1144,6 +1146,14 @@ function renderLoop() {
     const [nx, nz] = collide(pos.x + mx * sp, pos.z + mz * sp);
     pos.x = nx; pos.z = nz;
   }
+  // v4.6: 乗車中は馬と一緒に回る (本体の回転と同じ時刻・同じ速さで位相を合わせる)
+  if (ride) {
+    const phi = -ride.ha - 0.5 * (performance.now() * 0.001);
+    pos.x = CAR_C.x + 2.1 * Math.cos(phi);
+    pos.z = CAR_C.z + 2.1 * Math.sin(phi);
+    yaw = -phi;          // 進む向きを向く
+    rideY = 0.25;        // デッキの上面 (0.28) − パッド (0.03)
+  } else rideY = 0;
   const now = performance.now();
   if (thirdPerson) {
     // v3.4.3: 三人称カメラ。自キャラの後ろ (視線方向の逆) に回り込んで後ろ姿を見る。
@@ -1167,7 +1177,7 @@ function renderLoop() {
     // v3.9: 公園の西端・芝生の端まで広げる
     const camMinZ = inPlay ? -31.5 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))))));
     const camMaxZ = inPlay ? -14.1 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))))));
-    const myY = groundH(pos.x, pos.z);  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)
+    const myY = groundH(pos.x, pos.z) + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
     else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
@@ -1192,7 +1202,7 @@ function renderLoop() {
     // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
     // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
     // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
-    let camY = 1.5 + groundH(pos.x, pos.z), camPitch = pitch, camYaw = yaw;  // v3.19: 山の上では視点も上がる
+    let camY = 1.5 + groundH(pos.x, pos.z) + rideY, camPitch = pitch, camYaw = yaw;  // v3.19: 山の上では視点も上がる。v4.6: 乗車中はデッキ分も
     if (myEmote) {
       const t = (now - myEmote.t0) / 1000;
       if (myEmote.name === 'jump') {
@@ -1215,7 +1225,7 @@ function renderLoop() {
   if (selfAvatar) {
     selfAvatar.group.visible = thirdPerson;
     const sfx = emoteFrame(selfAvatar, now);
-    selfAvatar.group.position.set(pos.x, groundH(pos.x, pos.z) + sfx.yOff, pos.z);
+    selfAvatar.group.position.set(pos.x, groundH(pos.x, pos.z) + rideY + sfx.yOff, pos.z);
     selfAvatar.group.rotation.y = yaw + Math.PI;
     selfAvatar.inner.rotation.x = sfx.bowX;
     selfAvatar.inner.rotation.z = sfx.rockZ;
@@ -1230,7 +1240,7 @@ function renderLoop() {
     while (dy < -Math.PI) dy += Math.PI * 2;
     r.cur.yaw += dy * 0.18;
     const fx = emoteFrame(r, now);
-    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + fx.yOff, r.cur.z);
+    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + (r.ry || 0) + fx.yOff, r.cur.z);
     r.group.rotation.y = r.cur.yaw + Math.PI;
     r.inner.rotation.x = fx.bowX;
     r.inner.rotation.z = fx.rockZ;
@@ -1360,7 +1370,7 @@ function restoreArm(r) {
 }
 
 function startRoomLoops() {
-  hbTimer = setInterval(() => { apiAuth('/api/heartbeat', { x: pos.x, z: pos.z, yaw }).catch(() => {}); }, 250);
+  hbTimer = setInterval(() => { apiAuth('/api/heartbeat', { x: pos.x, z: pos.z, yaw, ry: rideY }).catch(() => {}); }, 250);
   plTimer = setInterval(() => { pollPlayers().catch(() => {}); }, 300);
   msgTimer = setInterval(() => { pollMessages().catch(() => {}); }, 600);
   pollPlayers().catch(() => {});
@@ -1518,6 +1528,7 @@ $('doEnter').onclick = async () => {
     return;
   }
   $('loading').classList.add('hidden');
+  ride = null; rideY = 0;
   pos.x = START.x; pos.z = START.z; lookAtStart();
   inRoom = true;
   ensureSelfAvatar();
@@ -1543,7 +1554,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1551,7 +1562,7 @@ async function leaveRoom() {
 }
 $('btnLeave').onclick = leaveRoom;
 $('btnLogout2').onclick = async () => { await leaveRoom(); await doLogout(); };
-$('btnReset').onclick = () => { pos.x = START.x; pos.z = START.z; lookAtStart(); };
+$('btnReset').onclick = () => { ride = null; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
 $('btnMenu').onclick = () => $('menuPanel').classList.toggle('hidden');
 $('btnHelp').onclick = () => { $('helpCard').classList.remove('hidden'); $('menuPanel').classList.add('hidden'); };
 $('btnCloseHelp').onclick = () => $('helpCard').classList.add('hidden');
@@ -1616,6 +1627,9 @@ $('chatInput').addEventListener('keydown', e => {
 // ---------- 掲示板 (v4.0): 公園の掲示板に近づくとボタンが出る ----------
 const BOARD_POS = { x: -18.6, z: -1.7 };
 const FW_POS = { x: -44.4, z: -2.4 };   // v4.3: 山頂の★看板 (花火の発射ボタンが出る場所)
+const CAR_C = { x: -34.8, z: -21.4 };   // v4.6: メリーゴーラウンドの中心
+let ride = null;      // v4.6: 乗車中は { ha } (乗っている馬の角度オフセット)
+let rideY = 0;        // v4.6: 乗車中の足元の高さオフセット (デッキの上)
 let boardHost = false;
 function fmtBoardTs(ts) {
   const d = new Date(ts);
@@ -1685,7 +1699,7 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
@@ -1693,7 +1707,42 @@ setInterval(() => {
   let dc = 1e9;
   for (const s of CRANE_SPOTS) dc = Math.min(dc, Math.hypot(pos.x - s.x, pos.z - s.z));
   $('craneBtn').classList.toggle('hidden', dc > 2.3 || craneOpen);
+  const rb = $('rideBtn');
+  if (ride) { rb.textContent = '🎠 おりる'; rb.classList.remove('hidden'); }
+  else {
+    rb.textContent = '🎠 メリーゴーラウンドに乗る';
+    rb.classList.toggle('hidden', Math.hypot(pos.x - CAR_C.x, pos.z - CAR_C.z) > 3.6 || craneOpen);
+  }
 }, 300);
+
+// ---------- メリーゴーラウンド乗車 (v4.6): 近づくとボタン、一番近い馬の横に立って一緒に回る ----------
+function mountCarousel() {
+  const pt = performance.now() * 0.001;
+  const pp = Math.atan2(pos.z - CAR_C.z, pos.x - CAR_C.x);
+  let best = 0, bd = 1e9;
+  for (let i = 0; i < 6; i++) {
+    const phi = -i * Math.PI / 3 - 0.5 * pt;   // 馬の今の角度 (本体の回転と同じ式)
+    const dd = Math.abs(((pp - phi) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+    if (dd < bd) { bd = dd; best = i; }
+  }
+  ride = { ha: best * Math.PI / 3 };
+}
+function dismountCarousel() {
+  if (!ride) return;
+  const pt = performance.now() * 0.001;
+  const phi0 = -ride.ha - 0.5 * pt;
+  ride = null; rideY = 0;
+  for (let k = 0; k < 12; k++) {   // 今の角度から順に、物にぶつからない降り場所を探す
+    const phi = phi0 + k * Math.PI / 6;
+    const nx = CAR_C.x + 3.45 * Math.cos(phi), nz = CAR_C.z + 3.45 * Math.sin(phi);
+    if (!inRegion(nx, nz)) continue;
+    let hit = false;
+    for (const b of BOXES) if (nx > b[0] - 0.3 && nx < b[1] + 0.3 && nz > b[2] - 0.3 && nz < b[3] + 0.3) { hit = true; break; }
+    if (!hit) { pos.x = nx; pos.z = nz; return; }
+  }
+  pos.x = CAR_C.x; pos.z = CAR_C.z + 3.45;   // 最終手段は真南
+}
+$('rideBtn').onclick = () => { if (ride) dismountCarousel(); else mountCarousel(); };
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
 const fwFx = [];   // 進行中の花火
