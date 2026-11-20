@@ -469,7 +469,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=53'],
+    ['room', 'assets/starryapa_room.glb?v=54'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -997,7 +997,7 @@ function groundH(x, z) {
   if (x >= -38.4 && x <= -34.4 && z >= 8.5 && z <= 13.3) return 0.06;      // ウメハウス (v4.2)
   if (x >= -9.6 && x <= -5.2 && z >= -26.7 && z <= -20.3) return 0.06;     // ミアんち (v4.7)
   if (x >= -9.35 && x <= -6.55 && z >= -11.0 && z <= -8.6) return 0.22;   // はに茶屋の座敷 (小上がり+畳, v5.3)
-  if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.3)
+  if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.4)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
