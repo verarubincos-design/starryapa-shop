@@ -189,6 +189,9 @@ let messages = [];           // {id, name, text, ts}
 let nextMsgId = 1;
 let fireworksAt = 0;         // v4.3: 花火が最後に発射された時刻 (全員への放送は /api/players の応答に載せる)
 const FIREWORKS_COOLDOWN_MS = 10000;
+let balloonAt = 0;           // v4.9: 気球が飛び立った時刻 (全員への放送は /api/players の応答に載せる)
+let balloonBy = '';          // v4.9: 気球に乗っている人の loginId
+const BALLOON_CYCLE_MS = 50000;   // v4.9: 上昇15s＋滞空14s＋下降15s＋着陸後の間隔6s
 
 const AVATAR_TYPES = ['vera', 'girl', 'boy'];
 const AVATAR_COLORS = ['violet', 'red', 'blue', 'green', 'yellow'];
@@ -299,7 +302,20 @@ function apiPlayers(body, res) {
       joinedAt: p.joinedAt, emote: p.emote, emoteAt: p.emoteAt
     });
   }
-  return sendJson(res, 200, { players: list, fireworksAt });
+  return sendJson(res, 200, { players: list, fireworksAt, balloonAt, balloonBy });
+}
+
+// v4.9: 公園の気球。乗った本人には即時応答し、他の全員には /api/players 経由で伝わる (花火と同じ方式)
+function apiBalloon(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const now = Date.now();
+  if (now - balloonAt < BALLOON_CYCLE_MS) {
+    return sendJson(res, 429, { error: 'cooldown', retryAfterMs: BALLOON_CYCLE_MS - (now - balloonAt) });
+  }
+  balloonAt = now;
+  balloonBy = a.loginId;
+  return sendJson(res, 200, { ok: true, balloonAt, balloonBy });
 }
 
 // v4.3: 山頂の発射ボタン。押した本人には即時応答し、他の全員には /api/players 経由で伝わる
@@ -394,6 +410,7 @@ const API = {
   '/api/players': apiPlayers,
   '/api/emote': apiEmote,
   '/api/fireworks': apiFireworks,
+  '/api/balloon': apiBalloon,
   '/api/say': apiSay,
   '/api/messages': apiMessages,
   '/api/leave': apiLeave,
