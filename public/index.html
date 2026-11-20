@@ -104,7 +104,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.3）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.1）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -323,7 +323,6 @@ let renderer, scene, camera, clock;
 let roomReady = false, inRoom = false;
 const dollScenes = {}; // type -> THREE.Object3D (original)
 let fish = null, fishBase = null, fishC = null, fishRotY = 0;   // v4.1: Bar AQUA の水槽の魚
-let koiP = null;   // v5.3: はに茶屋の池の鯉 (池の中心で回して泳がせる)
 // v4.5: プレイランドの動く乗り物
 let playWheelP = null, playCarP = null, playVikP = null;
 let playWheelMesh = null, playCarMesh = null, playVikMesh = null;
@@ -430,10 +429,6 @@ async function initRoom() {
   const ML = new THREE.PointLight(0xffd9e8, 8, 6, 2);
   ML.position.set(-7.4, 1.7, -23.5);
   scene.add(ML);
-  // v5.3: はに茶屋室内の明かり (暖かい橙)
-  const HL = new THREE.PointLight(0xffbe78, 8, 6, 2);
-  HL.position.set(-7.4, 1.9, -11.5);
-  scene.add(HL);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
     const CX = -20, CZ = 0, R = 300;
@@ -469,7 +464,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=54'],
+    ['room', 'assets/starryapa_room.glb?v=51'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -478,12 +473,6 @@ async function initRoom() {
     if (key === 'room') {
       gltf.scene.traverse(o => {
         if (o.isMesh) { o.frustumCulled = true; }
-        if (o.name === 'cha_koi') {   // v5.3: はに茶屋の池の鯉 (池の中心を軸に回す)
-          koiP = new THREE.Group();
-          koiP.position.set(-8.0, 0, -13.3);
-          scene.add(koiP);
-          koiP.attach(o);
-        }
         if (o.name === 'aqua_fish') {   // v4.1: 水槽の魚 (泳がせるために捕まえておく)
           fish = o; fishBase = o.position.clone();
           fishC = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
@@ -747,23 +736,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-8.9, -8.6, 9.95, 10.25],    // フロアランプ
   [-8.96, -8.64, 12.69, 13.01], // 観葉植物
   [-10.27, -10.03, 12.53, 12.77], // ポクテハウスの看板の柱
-  // v5.3: はに茶屋の内装 (壁と家具)
-  [-9.62, -9.42, -14.7, -11.0],   // 西の壁 (北側)
-  [-9.62, -9.42, -9.9, -8.3],     // 西の壁 (南側)
-  [-5.35, -5.15, -14.7, -8.3],    // 東の壁
-  [-9.6, -5.2, -14.77, -14.57],   // 北の壁
-  [-9.6, -5.2, -8.43, -8.23],     // 南の壁
-  [-6.39, -5.91, -13.8, -9.2],    // カウンター
-  [-5.62, -5.34, -13.8, -9.2],    // バックカウンター・棚
-  [-7.02, -6.68, -9.87, -9.53],   // スツール
-  [-7.02, -6.68, -10.97, -10.63], // スツール
-  [-7.02, -6.68, -12.07, -11.73], // スツール
-  [-8.5, -7.4, -10.08, -9.32],    // 座敷の座卓
-  [-9.36, -9.16, -14.45, -12.15], // 池の西の縁
-  [-6.94, -6.74, -14.45, -12.15], // 池の東の縁
-  [-9.36, -6.64, -14.45, -14.25], // 池の北の縁
-  [-9.36, -6.64, -12.35, -12.15], // 池の南の縁
-  [-4.62, -4.48, -13.97, -13.83], // 裏の木の幹
+  [-9.8, -5.05, -13.25, -9.75],   // はに茶屋の建物
   [-10.75, -10.15, 12.85, 15.2],  // ポクテハウス/銀の湯の前の生け垣
   [-10.75, -10.15, 7.8, 10.15],
   [-10.75, -10.15, -15.2, -12.85], // はに茶屋の前の生け垣
@@ -996,8 +969,6 @@ function groundH(x, z) {
   if (x >= -38.78 && x <= -34.42 && z >= 14.52 && z <= 19.88) return 0.06; // イクオハウス
   if (x >= -38.4 && x <= -34.4 && z >= 8.5 && z <= 13.3) return 0.06;      // ウメハウス (v4.2)
   if (x >= -9.6 && x <= -5.2 && z >= -26.7 && z <= -20.3) return 0.06;     // ミアんち (v4.7)
-  if (x >= -9.35 && x <= -6.55 && z >= -11.0 && z <= -8.6) return 0.22;   // はに茶屋の座敷 (小上がり+畳, v5.3)
-  if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.4)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
@@ -1342,14 +1313,13 @@ function renderLoop() {
     const onMtn = pos.x < -38.5 && pos.z > -13.5 && pos.z < 13.5;  // v3.19: 山とその周り
     const inPlay = pos.x > -39.3 && pos.x < -30.3 && pos.z > -31.4 && pos.z < -14.0;  // v4.5.1: プレイランドの中 (カメラ範囲が無いと東向きで真上視点に化けた)
     const inMia = pos.x > -9.5 && pos.x < -5.3 && pos.z > -26.6 && pos.z < -20.4;  // v4.7: ミアんちの中
-    const inCha = pos.x > -9.6 && pos.x < -5.2 && pos.z > -14.7 && pos.z < -8.3;  // v5.3: はに茶屋の中
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))))))));
-    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))))))));
+    const camMinX = inPlay ? -39.5 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))));
+    const camMaxX = inPlay ? -30.1 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))))))));
-    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))))))));
+    const camMinZ = inPlay ? -31.5 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))));
+    const camMaxZ = inPlay ? -14.1 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))));
     const myY = groundH(pos.x, pos.z) + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
@@ -1454,7 +1424,6 @@ function renderLoop() {
   // v4.5: プレイランド (観覧車はゆっくり回り、ゴンドラは常に水平。メリーゴーラウンド回転、バイキングは揺れる)
   {
     const pt = now * 0.001;
-    if (koiP) { koiP.rotation.y = pt * 0.25; koiP.position.y = Math.sin(pt * 1.7) * 0.008; }   // v5.3: 鯉が池をゆっくり回る
     if (playWheelP) {
       const th = pt * 0.3;
       playWheelP.rotation.z = th;
@@ -2138,13 +2107,13 @@ const PRIZE_TYPES = [
 let craneBag = {};
 try { craneBag = JSON.parse(localStorage.getItem('starryCraneBag') || '{}'); } catch (e) { craneBag = {}; }
 let crane = null;
-const CR = { railY: 42, restY: 66, homeX: 30, chuteX: 30, floorY: 252, minX: 30, maxX: 338 };   // v5.2: 初期位置は取り出し口の真上 (真下の景品がタダ取りできないように)
+const CR = { railY: 42, restY: 66, homeX: 70, chuteX: 30, floorY: 252, minX: 58, maxX: 338 };
 
-function craneJudge(dx, hard) {   // つかみ判定 (v5.2: 本物寄りに厳しく): 中心が合えば必ず、近ければ半分 (重い景品はさらに難しい)
+function craneJudge(dx, hard) {   // つかみ判定: 中心が合えば必ず、近ければ半分 (重い景品は少し難しい)
   const a = Math.abs(dx);
-  if (hard) { if (a <= 8) return true; if (a <= 18) return Math.random() < 0.4; return false; }
-  if (a <= 10) return true;
-  if (a <= 22) return Math.random() < 0.5;
+  if (hard) { if (a <= 18) return true; if (a <= 30) return Math.random() < 0.4; return false; }
+  if (a <= 24) return true;
+  if (a <= 38) return Math.random() < 0.5;
   return false;
 }
 function craneNewPrize(x, hasSwitch) {
@@ -2209,7 +2178,7 @@ function craneStartDrop() {
   c.gx = c.x + Math.sin(c.sway) * 40;
   let best = null, bd = 1e9;
   for (const p of c.prizes) {
-    if (p.gone || p.falling) continue;
+    if (p.gone) continue;
     const d = Math.abs(p.x - c.gx);
     if (d < bd) { bd = d; best = p; }
   }
@@ -2238,12 +2207,7 @@ function craneTick(ts) {
   } else if (c.phase === 'close') {
     c.phaseT += dt;
     if (c.phaseT >= 0.45) {
-      if (c.willHold && c.target) {
-        c.held = c.target; c.target.held = true;
-        // v5.2: 運ぶ途中で滑り落ちることがある (本物のアームの弱さ)。落ちる位置を先に決めておく
-        const slipP = c.target.type === 'switch2' ? 0.45 : 0.30;
-        c.slipAtX = (Math.random() < slipP) ? CR.chuteX + (c.x - CR.chuteX) * (0.3 + Math.random() * 0.4) : null;
-      }
+      if (c.willHold && c.target) { c.held = c.target; c.target.held = true; }
       else if (c.target) $('craneMsg').textContent = 'おしい！ すべっちゃった…';
       else $('craneMsg').textContent = 'なにもなかった…';
       c.phase = 'rise';
@@ -2253,10 +2217,6 @@ function craneTick(ts) {
     if (c.y <= CR.restY) { c.y = CR.restY; c.phase = 'return'; }
   } else if (c.phase === 'return') {
     c.x -= 200 * dt;
-    if (c.held && c.slipAtX != null && c.x <= c.slipAtX) {   // v5.2: 途中で滑り落ちた
-      const p = c.held; p.held = false; p.falling = true; p.vy = 0; c.held = null; c.slipAtX = null;
-      $('craneMsg').textContent = 'あっ…途中で落ちちゃった';
-    }
     if (c.x <= CR.chuteX) { c.x = CR.chuteX; c.phase = c.held ? 'release' : 'backhome'; c.phaseT = 0; }
   } else if (c.phase === 'release') {
     c.phaseT += dt;
@@ -2279,9 +2239,6 @@ function craneTick(ts) {
       c.x = CR.homeX; c.phase = 'ready';
       if (!c.held) $('craneMsg').textContent = 'もう一回どうぞ。「いどう」長押し→「つかむ」';
     }
-  }
-  for (const p of c.prizes) {   // v5.2: 落ちた景品は台の床まで落ちる
-    if (p.falling) { p.vy += 900 * dt; p.y += p.vy * dt; if (p.y >= 230) { p.y = 230; p.falling = false; } }
   }
   if (c.held && c.phase !== 'release') { c.held.x = c.x + Math.sin(c.sway) * 40; c.held.y = c.y + 34; }
   if (c.phase !== c.lastPhase) {
