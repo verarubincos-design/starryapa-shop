@@ -104,7 +104,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.9）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.0）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -416,7 +416,7 @@ async function initRoom() {
   scene.add(IL);
   // v4.1: Bar AQUA室内の明かり (カウンターの暖色＋水槽の青い光)
   const AL = new THREE.PointLight(0xffb36b, 9, 7, 2);
-  AL.position.set(-21.6, 1.8, -23.5);
+  AL.position.set(-21.6, 2.3, -23.5);   // v5.0: 天井が上がった分、明かりも少し上へ
   scene.add(AL);
   const TL = new THREE.PointLight(0x66ccee, 7, 5, 2);
   TL.position.set(-21.1, 1.5, -25.3);
@@ -464,7 +464,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=49'],
+    ['room', 'assets/starryapa_room.glb?v=50'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -1375,7 +1375,7 @@ function renderLoop() {
     selfAvatar.inner.rotation.y = sfx.spinY;
   }
   // リモート補間 + エモート
-  for (const r of remotes.values()) {
+  for (const [rid, r] of remotes) {
     r.cur.x += (r.tgt.x - r.cur.x) * 0.18;
     r.cur.z += (r.tgt.z - r.cur.z) * 0.18;
     let dy = r.tgt.yaw - r.cur.yaw;
@@ -1383,7 +1383,14 @@ function renderLoop() {
     while (dy < -Math.PI) dy += Math.PI * 2;
     r.cur.yaw += dy * 0.18;
     const fx = emoteFrame(r, now);
-    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + (r.ry || 0) + fx.yOff, r.cur.z);
+    let rY = r.ry || 0;
+    // v5.0: 気球の搭乗者の高さは、中継されてくる ry ではなく気球本体と同じ balloonAt から計算する
+    // (ry はハートビート＋ポーリング経由で遅れるため、見る側で気球とキャラがずれて見えた)
+    if (balloonAt && balloonBy && rid === balloonBy) {
+      const bt = (Date.now() - balloonAt) / 1000;
+      if (bt > 0 && bt < BAL_CYCLE) rY = balloonH(bt) + 0.18;
+    }
+    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + rY + fx.yOff, r.cur.z);
     r.group.rotation.y = r.cur.yaw + Math.PI;
     r.inner.rotation.x = fx.bowX;
     r.inner.rotation.z = fx.rockZ;
