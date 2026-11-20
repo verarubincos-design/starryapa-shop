@@ -103,7 +103,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.6）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.8）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -336,6 +336,9 @@ function pivotize(mesh, cx, cy, cz) {
   return pivot;
 }
 let starLayers = [];   // v4.2: 星空 (2層ドーム)
+let meteors = [];      // v4.8: 流れ星 (クライアントごとにランダム。NPCと同じ方式)
+let nextMeteorAt = 0;  // 次の流れ星が出る時刻 (performance.now 基準)
+let meteorTex = null;  // 流れ星の頭の光のテクスチャ (初回に生成)
 const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
 const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
 const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb' };
@@ -404,6 +407,10 @@ async function initRoom() {
   const UL = new THREE.PointLight(0xffd34d, 8, 6, 2);
   UL.position.set(-36.4, 1.7, 10.9);
   scene.add(UL);
+  // v4.7: ミアんち室内の明かり (淡いピンク)
+  const ML = new THREE.PointLight(0xffd9e8, 8, 6, 2);
+  ML.position.set(-7.4, 1.7, -23.5);
+  scene.add(ML);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
     const CX = -20, CZ = 0, R = 300;
@@ -439,7 +446,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=452'],
+    ['room', 'assets/starryapa_room.glb?v=47'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -731,11 +738,27 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-16.57, -16.23, -3.67, -3.33], [-16.57, -16.23, -8.17, -7.83],
   [-16.57, -16.23, -13.67, -13.33], [-16.57, -16.23, 13.33, 13.67],
   // v3.10: ミアんちと小道の北の延長
-  [-9.8, -5.05, -26.85, -20.15],   // ミアんちの建物
+  // v4.7: ミアんちの壁 (西はドアの隙間を空ける) と家具
+  [-9.6, -9.45, -21.9, -20.3],     // ミアんち 西の壁 (南)
+  [-9.6, -9.45, -26.7, -23.0],     // ミアんち 西の壁 (北)
+  [-9.45, -9.33, -22.08, -21.02],  // ミアんち 開いたドア
+  [-5.35, -5.2, -26.7, -20.3],     // ミアんち 東の壁
+  [-9.6, -5.2, -20.45, -20.3],     // ミアんち 南の壁
+  [-9.6, -5.2, -26.7, -26.55],     // ミアんち 北の壁
+  [-5.95, -5.55, -24.9, -22.3],    // ミアんち 衣装ラック
+  [-7.35, -5.35, -26.5, -25.8],    // ミアんち ワードローブ
+  [-5.78, -5.46, -21.9, -21.2],    // ミアんち 姿見
+  [-9.15, -7.95, -21.0, -20.45],   // ミアんち ドレッサー
+  [-6.75, -5.55, -22.35, -20.4],   // ミアんち ベッド
+  [-7.9, -6.9, -24.4, -23.4],      // ミアんち ローテーブル
+  [-9.3, -8.6, -26.4, -25.7],      // ミアんち 冷蔵庫
+  [-8.5, -8.0, -26.45, -25.85],    // ミアんち ビールケース
+  [-9.45, -9.1, -25.5, -24.3],     // ミアんち 景品棚
+  [-9.45, -9.05, -21.6, -20.7],    // ミアんち 靴棚
   [-10.75, -10.15, -27.2, -24.85], // ミアんちの前の生け垣
   [-10.75, -10.15, -22.15, -19.8],
   [-10.42, -9.72, -25.26, -24.34], // クレーンゲーム機
-  [-6.17, -5.83, -26.07, -25.73],  // ミアんちの木の幹
+  [-4.72, -4.38, -26.97, -26.63],  // ミアんちの木の幹 (v4.7: 家の中に埋もれていたのを北東の外へ)
   [-16.10, -13.30, -30.08, -29.72], // 小道の北の突き当たりの生け垣
   [-16.57, -16.23, -19.67, -19.33], [-16.57, -16.23, -26.17, -25.83],
   // v4.1: Bar AQUA（中に入れるバーに改装）壁と家具
@@ -919,6 +942,7 @@ function groundH(x, z) {
   if (x >= -15.23 && x <= -9.87 && z >= 33.32 && z <= 37.68) return 0.06;  // レイナ亭
   if (x >= -38.78 && x <= -34.42 && z >= 14.52 && z <= 19.88) return 0.06; // イクオハウス
   if (x >= -38.4 && x <= -34.4 && z >= 8.5 && z <= 13.3) return 0.06;      // ウメハウス (v4.2)
+  if (x >= -9.6 && x <= -5.2 && z >= -26.7 && z <= -20.3) return 0.06;     // ミアんち (v4.7)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
@@ -1130,6 +1154,77 @@ function setBubble(r, text) {
   r.bubbleUntil = performance.now() + 4000;
 }
 
+// v4.8: 流れ星。たまに (9〜31秒おき) 空を1つ、まれに2つ連なって流れる
+function spawnMeteor(nowMs, delayMs) {
+  const th = Math.random() * Math.PI * 2;                    // 水平の向きはランダム
+  const vh = 24 + Math.random() * 10;                        // 水平の速さ
+  const vel = { x: Math.cos(th) * vh, y: -vh * (0.34 + Math.random() * 0.18), z: Math.sin(th) * vh };
+  const speed = Math.hypot(vel.x, vel.y, vel.z);
+  const life = (46 + Math.random() * 14) / speed;            // 46〜60m 流れる
+  // 街の中心 (-25, -5) の上空を横切るよう、進行方向の逆側から出す
+  const back = 26 + Math.random() * 8;
+  const px = -25 - vel.x / speed * back + (Math.random() - 0.5) * 14;
+  const pz = -5 - vel.z / speed * back + (Math.random() - 0.5) * 14;
+  const py = 35 + Math.random() * 9;
+  const TRAIL = 16;
+  const posArr = new Float32Array(TRAIL * 3), colArr = new Float32Array(TRAIL * 3);
+  for (let i = 0; i < TRAIL; i++) {
+    const f = Math.pow(1 - i / (TRAIL - 1), 1.6);            // 尾はだんだん暗く (加算合成で消える)
+    colArr[i * 3] = 0.85 * f; colArr[i * 3 + 1] = 0.90 * f; colArr[i * 3 + 2] = f;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  line.frustumCulled = false;
+  if (!meteorTex) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const cx2 = cv.getContext('2d');
+    const gr = cx2.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(210,225,255,0.55)');
+    gr.addColorStop(1, 'rgba(180,200,255,0)');
+    cx2.fillStyle = gr; cx2.fillRect(0, 0, 64, 64);
+    meteorTex = new THREE.CanvasTexture(cv);
+  }
+  const head = new THREE.Sprite(new THREE.SpriteMaterial({ map: meteorTex, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  head.scale.set(2.4, 2.4, 1);
+  scene.add(line); scene.add(head);
+  meteors.push({ t0: nowMs + (delayMs || 0), life, vel, x0: px, y0: py, z0: pz, line, head, posArr, trail: TRAIL });
+}
+function updateMeteors(nowMs) {
+  if (!nextMeteorAt) nextMeteorAt = nowMs + 5000 + Math.random() * 8000;   // 最初は5〜13秒後
+  if (nowMs >= nextMeteorAt) {
+    spawnMeteor(nowMs, 0);
+    if (Math.random() < 0.18) spawnMeteor(nowMs, 350 + Math.random() * 400);   // たまに2つ目が続く
+    nextMeteorAt = nowMs + 9000 + Math.random() * 22000;
+  }
+  for (let i = meteors.length - 1; i >= 0; i--) {
+    const m = meteors[i];
+    const age = (nowMs - m.t0) / 1000;
+    if (age < 0) continue;
+    if (age >= m.life) {
+      scene.remove(m.line); scene.remove(m.head);
+      m.line.geometry.dispose(); m.line.material.dispose(); m.head.material.dispose();
+      meteors.splice(i, 1);
+      continue;
+    }
+    const hx = m.x0 + m.vel.x * age, hy = m.y0 + m.vel.y * age, hz = m.z0 + m.vel.z * age;
+    for (let j = 0; j < m.trail; j++) {
+      const bt = j * 0.030;   // 尾は頭の少し後ろをたどる
+      m.posArr[j * 3] = hx - m.vel.x * bt;
+      m.posArr[j * 3 + 1] = hy - m.vel.y * bt;
+      m.posArr[j * 3 + 2] = hz - m.vel.z * bt;
+    }
+    m.line.geometry.attributes.position.needsUpdate = true;
+    const env = Math.min(age / 0.18, 1) * Math.min(Math.max((m.life - age) / 0.35, 0), 1);   // ふわっと出て、ふわっと消える
+    m.line.material.opacity = env;
+    m.head.material.opacity = env;
+    m.head.position.set(hx, hy, hz);
+  }
+}
+
 function renderLoop() {
   rafId = requestAnimationFrame(renderLoop);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -1170,13 +1265,14 @@ function renderLoop() {
     const inUme = pos.x > -38.2 && pos.x < -34.6 && pos.z > 8.7 && pos.z < 13.1;  // v4.2: ウメハウスの中
     const onMtn = pos.x < -38.5 && pos.z > -13.5 && pos.z < 13.5;  // v3.19: 山とその周り
     const inPlay = pos.x > -39.3 && pos.x < -30.3 && pos.z > -31.4 && pos.z < -14.0;  // v4.5.1: プレイランドの中 (カメラ範囲が無いと東向きで真上視点に化けた)
+    const inMia = pos.x > -9.5 && pos.x < -5.3 && pos.z > -26.6 && pos.z < -20.4;  // v4.7: ミアんちの中
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPlay ? -39.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))))));
-    const camMaxX = inPlay ? -30.1 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))))));
+    const camMinX = inPlay ? -39.5 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))));
+    const camMaxX = inPlay ? -30.1 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPlay ? -31.5 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))))));
-    const camMaxZ = inPlay ? -14.1 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))))));
+    const camMinZ = inPlay ? -31.5 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))));
+    const camMaxZ = inPlay ? -14.1 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))));
     const myY = groundH(pos.x, pos.z) + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
@@ -1291,6 +1387,8 @@ function renderLoop() {
   }
   // v4.3: 花火の進行
   updateFireworks(dt);
+  // v4.8: 流れ星の進行
+  updateMeteors(performance.now());
   // NPC (v3.14): 街の住人の自律行動
   updateNpcs(now, dt);
   renderer.render(scene, camera);
