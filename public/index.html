@@ -104,7 +104,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.1）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.2）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -2107,13 +2107,13 @@ const PRIZE_TYPES = [
 let craneBag = {};
 try { craneBag = JSON.parse(localStorage.getItem('starryCraneBag') || '{}'); } catch (e) { craneBag = {}; }
 let crane = null;
-const CR = { railY: 42, restY: 66, homeX: 70, chuteX: 30, floorY: 252, minX: 58, maxX: 338 };
+const CR = { railY: 42, restY: 66, homeX: 30, chuteX: 30, floorY: 252, minX: 30, maxX: 338 };   // v5.2: 初期位置は取り出し口の真上 (真下の景品がタダ取りできないように)
 
-function craneJudge(dx, hard) {   // つかみ判定: 中心が合えば必ず、近ければ半分 (重い景品は少し難しい)
+function craneJudge(dx, hard) {   // つかみ判定 (v5.2: 本物寄りに厳しく): 中心が合えば必ず、近ければ半分 (重い景品はさらに難しい)
   const a = Math.abs(dx);
-  if (hard) { if (a <= 18) return true; if (a <= 30) return Math.random() < 0.4; return false; }
-  if (a <= 24) return true;
-  if (a <= 38) return Math.random() < 0.5;
+  if (hard) { if (a <= 8) return true; if (a <= 18) return Math.random() < 0.4; return false; }
+  if (a <= 10) return true;
+  if (a <= 22) return Math.random() < 0.5;
   return false;
 }
 function craneNewPrize(x, hasSwitch) {
@@ -2178,7 +2178,7 @@ function craneStartDrop() {
   c.gx = c.x + Math.sin(c.sway) * 40;
   let best = null, bd = 1e9;
   for (const p of c.prizes) {
-    if (p.gone) continue;
+    if (p.gone || p.falling) continue;
     const d = Math.abs(p.x - c.gx);
     if (d < bd) { bd = d; best = p; }
   }
@@ -2207,7 +2207,12 @@ function craneTick(ts) {
   } else if (c.phase === 'close') {
     c.phaseT += dt;
     if (c.phaseT >= 0.45) {
-      if (c.willHold && c.target) { c.held = c.target; c.target.held = true; }
+      if (c.willHold && c.target) {
+        c.held = c.target; c.target.held = true;
+        // v5.2: 運ぶ途中で滑り落ちることがある (本物のアームの弱さ)。落ちる位置を先に決めておく
+        const slipP = c.target.type === 'switch2' ? 0.45 : 0.30;
+        c.slipAtX = (Math.random() < slipP) ? CR.chuteX + (c.x - CR.chuteX) * (0.3 + Math.random() * 0.4) : null;
+      }
       else if (c.target) $('craneMsg').textContent = 'おしい！ すべっちゃった…';
       else $('craneMsg').textContent = 'なにもなかった…';
       c.phase = 'rise';
@@ -2217,6 +2222,10 @@ function craneTick(ts) {
     if (c.y <= CR.restY) { c.y = CR.restY; c.phase = 'return'; }
   } else if (c.phase === 'return') {
     c.x -= 200 * dt;
+    if (c.held && c.slipAtX != null && c.x <= c.slipAtX) {   // v5.2: 途中で滑り落ちた
+      const p = c.held; p.held = false; p.falling = true; p.vy = 0; c.held = null; c.slipAtX = null;
+      $('craneMsg').textContent = 'あっ…途中で落ちちゃった';
+    }
     if (c.x <= CR.chuteX) { c.x = CR.chuteX; c.phase = c.held ? 'release' : 'backhome'; c.phaseT = 0; }
   } else if (c.phase === 'release') {
     c.phaseT += dt;
@@ -2239,6 +2248,9 @@ function craneTick(ts) {
       c.x = CR.homeX; c.phase = 'ready';
       if (!c.held) $('craneMsg').textContent = 'もう一回どうぞ。「いどう」長押し→「つかむ」';
     }
+  }
+  for (const p of c.prizes) {   // v5.2: 落ちた景品は台の床まで落ちる
+    if (p.falling) { p.vy += 900 * dt; p.y += p.vy * dt; if (p.y >= 230) { p.y = 230; p.falling = false; } }
   }
   if (c.held && c.phase !== 'release') { c.held.x = c.x + Math.sin(c.sway) * 40; c.held.y = c.y + 34; }
   if (c.phase !== c.lastPhase) {
