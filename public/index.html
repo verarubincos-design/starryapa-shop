@@ -73,6 +73,7 @@
   #fwBtn:disabled { opacity: 0.55; }
   #craneBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(85,48,104,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #rideBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,44,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #balBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(43,94,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #cranePanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(24,16,30,0.96); border: 1px solid rgba(217,165,255,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
   #cranePanel h2 { font-size: 15px; color: #e6c8ff; margin-bottom: 8px; }
   #craneCanvas { display: block; width: 100%; border-radius: 8px; background: #2b2136; }
@@ -103,7 +104,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v4.8）</div>
+    <div class="sub">みんなで歩ける小さなお店（v4.9）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -193,6 +194,7 @@
 <button id="fwBtn" class="hidden">🎆 花火を発射</button>
 <button id="craneBtn" class="hidden">🕹 クレーンゲーム</button>
 <button id="rideBtn" class="hidden">🎠 メリーゴーラウンドに乗る</button>
+<button id="balBtn" class="hidden">🎈 気球に乗る</button>
 <div id="cranePanel" class="hidden">
   <h2>🕹 クレーンゲーム</h2>
   <canvas id="craneCanvas" width="360" height="300"></canvas>
@@ -335,6 +337,22 @@ function pivotize(mesh, cx, cy, cz) {
   pivot.attach(mesh);   // メッシュのワールド姿勢を保ったままピボット配下へ (結合メッシュの変換が残っていても安全)
   return pivot;
 }
+let balP = null;               // v4.9: 気球のピボット (balloon_* メッシュをまとめて上下・回転させる)
+const balMeshes = [];          // v4.9: 気球のパーツ
+let balloonAt = 0, balloonBy = '';   // v4.9: サーバーから受け取る気球の状態
+let balloonRide = false;       // v4.9: 自分が乗っているか
+let lastDragAt = 0;            // v4.9: 最後に視点ドラッグした時刻 (performance.now 基準)
+const BAL_C = { x: -23.8, z: -7.5 };   // v4.9: 気球の定位置 (公園の北の芝生, three座標)
+const BAL_TOP = 14, BAL_RISE = 15, BAL_HOLD = 14, BAL_FALL = 15;   // 上昇・滞空・下降 (秒)
+const BAL_CYCLE = BAL_RISE + BAL_HOLD + BAL_FALL;                  // 44秒で一周
+const BAL_SPIN = 0.12;         // v4.9: 飛行中のゆっくりした回転 (rad/s)
+function balloonH(t) {         // 経過秒 → 高さ (出発と着陸はなめらかに)
+  if (!(t > 0) || t >= BAL_CYCLE) return 0;
+  const ease = u => 0.5 - 0.5 * Math.cos(Math.PI * u);
+  if (t < BAL_RISE) return BAL_TOP * ease(t / BAL_RISE);
+  if (t < BAL_RISE + BAL_HOLD) return BAL_TOP;
+  return BAL_TOP * (1 - ease((t - BAL_RISE - BAL_HOLD) / BAL_FALL));
+}
 let starLayers = [];   // v4.2: 星空 (2層ドーム)
 let meteors = [];      // v4.8: 流れ星 (クライアントごとにランダム。NPCと同じ方式)
 let nextMeteorAt = 0;  // 次の流れ星が出る時刻 (performance.now 基準)
@@ -446,7 +464,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=47'],
+    ['room', 'assets/starryapa_room.glb?v=49'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -460,6 +478,7 @@ async function initRoom() {
           fishC = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
         }
         // v4.5: プレイランドの乗り物 (回転軸で包んでアニメーションする)
+        if (o.name.startsWith('balloon_')) balMeshes.push(o);   // v4.9: 気球のパーツを集める
         if (o.name === 'play_wheel') playWheelMesh = o;
         if (o.name === 'play_carousel') playCarMesh = o;
         if (o.name === 'play_viking') playVikMesh = o;
@@ -469,6 +488,12 @@ async function initRoom() {
         }
       });
       scene.add(gltf.scene);
+      if (balMeshes.length) {   // v4.9: 気球を定位置のピボットにまとめる (attach でワールド姿勢は保持)
+        balP = new THREE.Group();
+        balP.position.set(BAL_C.x, 0, BAL_C.z);
+        gltf.scene.add(balP);
+        for (const m of balMeshes) balP.attach(m);
+      }
       playWheelP = pivotize(playWheelMesh, PLAY_HUB.x, PLAY_HUB.y, PLAY_HUB.z);
       playCarP = pivotize(playCarMesh, -34.8, 0, -21.4);
       playVikP = pivotize(playVikMesh, -32.3, 3.1, -17.5);
@@ -722,6 +747,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-25.93, -25.67, -3.53, -3.27],  // 桜の木 (v3.17)
   [-19.93, -19.67, -9.93, -9.67],  // 桜の木 (v3.17)
   [-27.93, -27.67, 8.47, 8.73],    // 桜の木 (v3.17)
+  [-24.42, -23.18, -8.12, -6.88],  // 気球のカゴ (v4.9)
   // v3.17.1: 花のアーチの柱は細いので当たり判定なし (入口で引っ掛かるため、ベンチと同じく素通り)
   // v4.0: ベンチの当たり判定を撤去 (実物とずれた場所にあり、見えない壁になっていたため。本来の仕様どおり素通りに)
   [-20.3, -18.7, 2.6, 4.2],        // 花壇
@@ -997,6 +1023,7 @@ document.addEventListener('mousemove', e => {
   pitch -= (e.clientY - lastPY) * 0.005;
   pitch = Math.max(-1.1, Math.min(1.1, pitch));
   lastPX = e.clientX; lastPY = e.clientY;
+  lastDragAt = performance.now();   // v4.9: 気球の自動回転を止める合図
 });
 addEventListener('blur', () => { dragging = false; });
 addEventListener('keydown', e => { if (e.code === 'Escape') dragging = false; });
@@ -1029,6 +1056,7 @@ function setupTouchControls() {
         pitch -= (t.clientY - ly) * 0.006;
         pitch = Math.max(-1.1, Math.min(1.1, pitch));
         lx = t.clientX; ly = t.clientY;
+        lastDragAt = performance.now();   // v4.9: 気球の自動回転を止める合図
       }
     }
   }, { passive: true });
@@ -1110,6 +1138,9 @@ async function pollPlayers() {
     if (lastFwAt === null) lastFwAt = data.fireworksAt;
     else if (data.fireworksAt !== lastFwAt) { lastFwAt = data.fireworksAt; startFwShow(); }
   }
+  // v4.9: 気球の状態 (誰が乗っていつ飛び立ったか) を全員で共有する
+  balloonAt = data.balloonAt || 0;
+  balloonBy = data.balloonBy || '';
 }
 
 function logOnce(m) {
@@ -1230,8 +1261,8 @@ function renderLoop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // 移動
   let mx = 0, mz = 0;
-  const fwd = (craneOpen || ride) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
-  const str = (craneOpen || ride) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const fwd = (craneOpen || ride || balloonRide) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = (craneOpen || ride || balloonRide) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   mx = (-sin * fwd + cos * str);
   mz = (-cos * fwd - sin * str);
@@ -1248,7 +1279,23 @@ function renderLoop() {
     pos.z = CAR_C.z + 2.1 * Math.sin(phi);
     yaw = -phi;          // 進む向きを向く
     rideY = 0.25;        // デッキの上面 (0.28) − パッド (0.03)
+  } else if (balloonRide) {
+    // v4.9: 気球に乗っている間はカゴの真ん中に固定。気球本体は下の balP で全員同じ動き
+    const bt = (Date.now() - balloonAt) / 1000;
+    if (bt >= BAL_CYCLE || !balloonAt) endBalloonRide();
+    else {
+      pos.x = BAL_C.x; pos.z = BAL_C.z;
+      rideY = balloonH(bt) + 0.18;   // カゴの床の上
+      // 操作していない間は気球と一緒にゆっくり回る。ドラッグ中とその後しばらくは自由に見られる
+      if (!dragging && performance.now() - lastDragAt > 2500) yaw += BAL_SPIN * dt;
+    }
   } else rideY = 0;
+  // v4.9: 気球本体の動き (balloonAt から全員が同じ高さ・回転を計算する)
+  if (balP) {
+    const bt = balloonAt ? (Date.now() - balloonAt) / 1000 : 1e9;
+    balP.position.y = balloonH(bt);
+    balP.rotation.y = (bt > 0 && bt < BAL_CYCLE) ? bt * BAL_SPIN : 0;
+  }
   const now = performance.now();
   if (thirdPerson) {
     // v3.4.3: 三人称カメラ。自キャラの後ろ (視線方向の逆) に回り込んで後ろ姿を見る。
@@ -1652,7 +1699,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1660,7 +1707,7 @@ async function leaveRoom() {
 }
 $('btnLeave').onclick = leaveRoom;
 $('btnLogout2').onclick = async () => { await leaveRoom(); await doLogout(); };
-$('btnReset').onclick = () => { ride = null; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
+$('btnReset').onclick = () => { ride = null; balloonRide = false; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
 $('btnMenu').onclick = () => $('menuPanel').classList.toggle('hidden');
 $('btnHelp').onclick = () => { $('helpCard').classList.remove('hidden'); $('menuPanel').classList.add('hidden'); };
 $('btnCloseHelp').onclick = () => $('helpCard').classList.add('hidden');
@@ -1797,7 +1844,7 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
@@ -1811,6 +1858,9 @@ setInterval(() => {
     rb.textContent = '🎠 メリーゴーラウンドに乗る';
     rb.classList.toggle('hidden', Math.hypot(pos.x - CAR_C.x, pos.z - CAR_C.z) > 3.6 || craneOpen);
   }
+  // v4.9: 気球が地上にいて空いている時だけ「乗る」ボタンを出す
+  const balIdle = !balloonAt || Date.now() - balloonAt > (BAL_CYCLE + 6) * 1000;
+  $('balBtn').classList.toggle('hidden', balloonRide || !balIdle || craneOpen || Math.hypot(pos.x - BAL_C.x, pos.z - BAL_C.z) > 2.8);
 }, 300);
 
 // ---------- メリーゴーラウンド乗車 (v4.6): 近づくとボタン、一番近い馬の横に立って一緒に回る ----------
@@ -1841,6 +1891,35 @@ function dismountCarousel() {
   pos.x = CAR_C.x; pos.z = CAR_C.z + 3.45;   // 最終手段は真南
 }
 $('rideBtn').onclick = () => { if (ride) dismountCarousel(); else mountCarousel(); };
+
+// ---------- 気球 (v4.9): 公園の北の芝生。乗ると全員に見える形で上昇し、ゆっくり回る ----------
+let balBusy = false;
+async function mountBalloon() {
+  if (balBusy || balloonRide) return;
+  balBusy = true;
+  try {
+    const { status, data } = await apiAuth('/api/balloon', {});
+    if (status === 200 && data.balloonAt) {
+      balloonAt = data.balloonAt; balloonBy = data.balloonBy;
+      balloonRide = true;
+      lastDragAt = performance.now();
+    }
+  } catch (e) { /* 通信エラー時は乗らない */ }
+  balBusy = false;
+}
+function endBalloonRide() {
+  balloonRide = false; rideY = 0;
+  for (let k = 0; k < 8; k++) {   // カゴの周りで、物にぶつからない場所に降りる
+    const a = k * Math.PI / 4;
+    const nx = BAL_C.x + 1.7 * Math.cos(a), nz = BAL_C.z + 1.7 * Math.sin(a);
+    if (!inRegion(nx, nz)) continue;
+    let hit = false;
+    for (const b of BOXES) if (nx > b[0] - 0.3 && nx < b[1] + 0.3 && nz > b[2] - 0.3 && nz < b[3] + 0.3) { hit = true; break; }
+    if (!hit) { pos.x = nx; pos.z = nz; return; }
+  }
+  pos.x = BAL_C.x; pos.z = BAL_C.z + 1.7;   // 最終手段は真南
+}
+$('balBtn').onclick = mountBalloon;
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
 const fwFx = [];   // 進行中の花火
