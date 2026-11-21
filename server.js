@@ -192,6 +192,8 @@ const FIREWORKS_COOLDOWN_MS = 10000;
 let balloonAt = 0;           // v4.9: 気球が飛び立った時刻 (全員への放送は /api/players の応答に載せる)
 let balloonBy = '';          // v4.9: 気球に乗っている人の loginId
 const BALLOON_CYCLE_MS = 50000;   // v4.9: 上昇15s＋滞空14s＋下降15s＋着陸後の間隔6s
+let birdsBy = ['', '', ''];  // v5.13: 怪鳥3羽に乗っている人の loginId ('' は空き)
+let birdsAt = [0, 0, 0];     // v5.13: 怪鳥に乗り始めた時刻
 
 const AVATAR_TYPES = ['vera', 'girl', 'boy'];
 const AVATAR_COLORS = ['violet', 'red', 'blue', 'green', 'yellow'];
@@ -302,7 +304,11 @@ function apiPlayers(body, res) {
       joinedAt: p.joinedAt, emote: p.emote, emoteAt: p.emoteAt
     });
   }
-  return sendJson(res, 200, { players: list, fireworksAt, balloonAt, balloonBy });
+  // v5.13: 退出・タイムアウトした人の怪鳥は空きに戻す
+  for (let i = 0; i < 3; i++) {
+    if (birdsBy[i] && !presence.has(birdsBy[i].toLowerCase())) { birdsBy[i] = ''; birdsAt[i] = 0; }
+  }
+  return sendJson(res, 200, { players: list, fireworksAt, balloonAt, balloonBy, birdsBy, birdsAt });
 }
 
 // v4.9: 公園の気球。乗った本人には即時応答し、他の全員には /api/players 経由で伝わる (花火と同じ方式)
@@ -316,6 +322,27 @@ function apiBalloon(body, res) {
   balloonAt = now;
   balloonBy = a.loginId;
   return sendJson(res, 200, { ok: true, balloonAt, balloonBy });
+}
+
+// v5.13: 怪鳥の騎乗・降鳥。本人には即時応答し、他の全員には /api/players 経由で伝わる (気球と同じ方式)
+function apiBird(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const i = +body.bird;
+  if (!(i >= 0 && i < 3)) return sendJson(res, 400, { error: 'bad bird' });
+  const now = Date.now();
+  if (body.off) {
+    if (birdsBy[i] === a.loginId) { birdsBy[i] = ''; birdsAt[i] = 0; }
+    return sendJson(res, 200, { ok: true, birdsBy, birdsAt });
+  }
+  if (birdsBy[i] && birdsBy[i] !== a.loginId && presence.has(birdsBy[i].toLowerCase())) {
+    return sendJson(res, 429, { error: 'taken' });
+  }
+  // 別の鳥に乗っていたら降りておく
+  for (let j = 0; j < 3; j++) if (birdsBy[j] === a.loginId) { birdsBy[j] = ''; birdsAt[j] = 0; }
+  birdsBy[i] = a.loginId;
+  birdsAt[i] = now;
+  return sendJson(res, 200, { ok: true, birdsBy, birdsAt });
 }
 
 // v4.3: 山頂の発射ボタン。押した本人には即時応答し、他の全員には /api/players 経由で伝わる
@@ -411,6 +438,7 @@ const API = {
   '/api/emote': apiEmote,
   '/api/fireworks': apiFireworks,
   '/api/balloon': apiBalloon,
+  '/api/bird': apiBird,
   '/api/say': apiSay,
   '/api/messages': apiMessages,
   '/api/leave': apiLeave,
