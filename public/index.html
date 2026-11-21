@@ -75,6 +75,11 @@
   #rideBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,44,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #balBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(43,94,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #bathBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(24,102,110,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #birdBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(84,60,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #flyPad { position: fixed; left: 50%; transform: translateX(-50%); bottom: 112px; z-index: 17; display: flex; gap: 8px; }
+  #flyPad.hidden { display: none; }
+  #flyPad button { background: rgba(30,30,46,0.88); color: #fff; border: 1px solid rgba(255,217,160,0.55); border-radius: 12px; padding: 12px 14px; font-size: 15px; font-weight: bold; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #flyPad button.on { background: rgba(120,90,200,0.95); }
   #cranePanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(24,16,30,0.96); border: 1px solid rgba(217,165,255,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
   #cranePanel h2 { font-size: 15px; color: #e6c8ff; margin-bottom: 8px; }
   #craneCanvas { display: block; width: 100%; border-radius: 8px; background: #2b2136; }
@@ -105,7 +110,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.12）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.13）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -197,6 +202,13 @@
 <button id="rideBtn" class="hidden">🎠 メリーゴーラウンドに乗る</button>
 <button id="balBtn" class="hidden">🎈 気球に乗る</button>
 <button id="bathBtn" class="hidden">🛁 入浴する</button>
+<button id="birdBtn" class="hidden">🪶 怪鳥に乗る</button>
+<div id="flyPad" class="hidden">
+  <button id="flyL">◀ 左</button>
+  <button id="flyU">▲ 上昇</button>
+  <button id="flyD">▼ 下降</button>
+  <button id="flyR">右 ▶</button>
+</div>
 <div id="cranePanel" class="hidden">
   <h2>🕹 クレーンゲーム</h2>
   <canvas id="craneCanvas" width="360" height="300"></canvas>
@@ -349,6 +361,28 @@ let lastDragAt = 0;            // v4.9: 最後に視点ドラッグした時刻 
 const BAL_C = { x: -23.8, z: -7.5 };   // v4.9: 気球の定位置 (公園の北の芝生, three座標)
 const BATH_POS = { x: -6.2, z: 23.5 };   // v5.12: 湯船の中の位置 (銀の湯)
 const BATH_RIM = { x: -7.35, z: 23.5 };  // v5.12: 湯船の前の洗い場 (ボタンを出す場所)
+// v5.13: 怪鳥 (飼育場は酒屋・イクオハウスの外側)。位置は three 座標、止まり木の上の体の中心 y=1.62
+const BIRD_HOME = { x: -44.8, z: 21.0 };  // 飼育場の中心 (おりるボタンの判定)
+const PERCHES = [{ x: -47.5, z: 19.0 }, { x: -44.8, z: 22.5 }, { x: -42.2, z: 19.0 }];
+const BIRD_SIT = 0.34;         // 鳥の中心から鞍 (アバターの足元) までの高さ
+const birdParts = [[], [], []];   // GLB から集める bird{i}_* メッシュ
+const birdG = [null, null, null]; // 組み立てた鳥 {g, wl, wr, flap, nextSh}
+let birdsBy = ['', '', ''], birdsAt = [0, 0, 0];   // サーバーから受け取る騎乗状態
+let flyBird = -1;              // 自分が乗っている鳥 (-1 は乗っていない)
+let fly = null;                // 飛行状態 {x, z, alt, yaw}
+let flyPhase = '';             // 'takeoff' | 'fly' | 'landing'
+let flyT0 = 0;                 // 離陸を始めた時刻
+let birdBusy = false;          // 騎乗リクエスト送信中
+const flyInput = { l: false, r: false, u: false, d: false };   // 飛行ボタンの押しっぱなし状態
+function birdMinAlt(x, z) {    // 建物の屋根にぶつからない最低高度
+  let m = groundH(x, z) + 1.3;
+  if (x >= -29.8 && x <= -24.2 && z >= -29.0 && z <= -18.0) m = Math.max(m, 5.6);        // 学校
+  if (x >= -23.2 && x <= -18.4 && z >= -26.9 && z <= -20.1) m = Math.max(m, 7.4);        // Bar AQUA (2階建て)
+  if (x >= -39.4 && x <= -30.2 && z >= -31.5 && z <= -14.5) m = Math.max(m, 9.4);        // プレイランド (観覧車)
+  if (x > -30.5 && x < -4.0) m = Math.max(m, 4.9);                                       // 東の街並み
+  if (x >= -39.0 && x <= -34.2 && z >= 7.5 && z <= 27.0) m = Math.max(m, 4.3);           // 西の家並み
+  return m;
+}
 const BAL_TOP = 14, BAL_RISE = 15, BAL_HOLD = 14, BAL_FALL = 15;   // 上昇・滞空・下降 (秒)
 const BAL_CYCLE = BAL_RISE + BAL_HOLD + BAL_FALL;                  // 44秒で一周
 const BAL_SPIN = 0.12;         // v4.9: 飛行中のゆっくりした回転 (rad/s)
@@ -451,7 +485,7 @@ async function initRoom() {
   SL2.position.set(-27.4, 4.1, -23.5);
   scene.add(SL2);
   const NL = new THREE.PointLight(0x9db8ff, 8, 8, 2);
-  NL.position.set(-34.8, 2.0, -37.0);
+  NL.position.set(-44.2, 2.0, -23.0);   // v5.13: シロノハウスの移転先
   scene.add(NL);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
@@ -488,7 +522,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=512'],
+    ['room', 'assets/starryapa_room.glb?v=513'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -504,6 +538,8 @@ async function initRoom() {
         }
         // v4.5: プレイランドの乗り物 (回転軸で包んでアニメーションする)
         if (o.name.startsWith('balloon_')) balMeshes.push(o);   // v4.9: 気球のパーツを集める
+        const bmd = o.name.match(/^bird(\d+)_/);   // v5.13: 怪鳥のパーツを集める
+        if (bmd) birdParts[+bmd[1]].push(o);
         if (o.name === 'play_wheel') playWheelMesh = o;
         if (o.name === 'play_carousel') playCarMesh = o;
         if (o.name === 'play_viking') playVikMesh = o;
@@ -525,6 +561,22 @@ async function initRoom() {
         balP.position.set(BAL_C.x, 0, BAL_C.z);
         gltf.scene.add(balP);
         for (const m of balMeshes) balP.attach(m);
+      }
+      for (let bi = 0; bi < 3; bi++) {   // v5.13: 怪鳥を止まり木のピボットにまとめる (翼は肩ピボットで羽ばたかせる)
+        if (!birdParts[bi].length) continue;
+        const g = new THREE.Group();
+        g.position.set(PERCHES[bi].x, 1.62, PERCHES[bi].z);
+        gltf.scene.add(g);
+        const wl = new THREE.Group(), wr = new THREE.Group();
+        wl.position.set(-0.05, 0.05, -0.10);
+        wr.position.set(-0.05, 0.05, 0.10);
+        g.add(wl); g.add(wr);
+        for (const m of birdParts[bi]) {
+          if (m.name.endsWith('_wl')) wl.attach(m);
+          else if (m.name.endsWith('_wr')) wr.attach(m);
+          else g.attach(m);
+        }
+        birdG[bi] = { g, wl, wr, flap: -0.12, nextSh: performance.now() + 3000 + Math.random() * 5000, shT: -1 };
       }
       playWheelP = pivotize(playWheelMesh, PLAY_HUB.x, PLAY_HUB.y, PLAY_HUB.z);
       playCarP = pivotize(playCarMesh, -34.8, 0, -21.4);
@@ -880,16 +932,31 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-25.6, -24.6, -16.98, -16.62],
   [-29.57, -29.23, -15.77, -15.43], // 学校の木の幹
   [-24.77, -24.43, -15.77, -15.43],
-  // v5.12: シロノハウス (プレイランドの北・中に入れる)
-  [-37.0, -35.42, -33.97, -33.63], // 南の壁 (入口より西)
-  [-34.18, -32.6, -33.97, -33.63], // 南の壁 (入口より東)
-  [-37.0, -32.6, -40.37, -40.03],  // 北の壁
-  [-37.17, -36.83, -40.2, -33.8],  // 西の壁
-  [-32.77, -32.43, -40.2, -33.8],  // 東の壁
-  [-36.5, -33.1, -40.10, -37.86],  // 大きなベッド
-  [-36.80, -36.40, -37.64, -36.96], // ナイトテーブル
-  [-33.38, -32.78, -34.54, -34.02], // エナジードリンクのケース
-  [-33.57, -33.33, -32.72, -32.48], // 小道のランプ
+  // v5.13: シロノハウス (プレイランドの西へ移転・中に入れる)
+  [-46.4, -44.82, -19.97, -19.63], // 南の壁 (入口より西)
+  [-43.58, -42.0, -19.97, -19.63], // 南の壁 (入口より東)
+  [-46.4, -42.0, -26.37, -26.03],  // 北の壁
+  [-46.57, -46.23, -26.2, -19.8],  // 西の壁
+  [-42.17, -41.83, -26.2, -19.8],  // 東の壁
+  [-45.9, -42.5, -26.10, -23.86],  // 大きなベッド
+  [-46.20, -45.80, -23.64, -22.96], // ナイトテーブル
+  [-42.78, -42.18, -20.54, -20.02], // エナジードリンクのケース
+  [-42.97, -42.73, -18.22, -17.98], // 小道のランプ
+  // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側)
+  [-39.75, -39.45, 16.2, 25.8],    // 東の柵
+  [-50.45, -50.15, 16.2, 25.8],    // 西の柵
+  [-50.3, -39.6, 16.05, 16.35],    // 北の柵
+  [-50.3, -45.5, 25.65, 25.95],    // 南の柵 (ゲートより西)
+  [-44.1, -39.6, 25.65, 25.95],    // 南の柵 (ゲートより東)
+  [-45.62, -45.48, 25.83, 25.97],  // 看板の柱 (西)
+  [-44.12, -43.98, 25.83, 25.97],  // 看板の柱 (東)
+  [-47.62, -47.38, 18.88, 19.12],  // 止まり木1
+  [-44.92, -44.68, 22.38, 22.62],  // 止まり木2
+  [-42.32, -42.08, 18.88, 19.12],  // 止まり木3
+  [-41.75, -40.85, 23.6, 24.0],    // 水桶
+  [-49.0, -48.4, 24.0, 24.6],      // 巣
+  [-48.95, -48.25, 16.95, 17.65],  // 干し草
+  [-40.85, -40.05, 16.95, 17.6],   // 餌袋
   // v3.13: スター商店街（銀の湯の前から西へ伸びる道と小店舗4軒＋アーチ看板）
   [-21.2, -17.4, 18.35, 21.45],   // 花屋の建物
   [-27.2, -23.4, 18.35, 21.45],   // 八百屋の建物
@@ -981,8 +1048,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-30.35, -29.65, -16.1, -1.55],  // 公園奥の生け垣 (抜け口より北)
   [-18.85, -18.35, -2.85, -0.55],  // 掲示板 (v4.0)
   // v4.5: プレイランド (学校の西) 柵と乗り物
-  [-39.4, -35.44, -31.5, -31.3],   // 北の柵 (ゲートより西, v5.12)
-  [-34.14, -30.2, -31.5, -31.3],   // 北の柵 (ゲートより東, v5.12)
+  [-39.4, -30.2, -31.5, -31.3],   // 北の柵 (v5.13: 一本に戻した)
   [-39.4, -34.6, -14.65, -14.45],  // 南の柵 (ゲートより西)
   [-31.9, -30.2, -14.65, -14.45],  // 南の柵 (ゲートより東)
   [-39.45, -39.25, -31.4, -14.6],  // 西の柵
@@ -1033,8 +1099,10 @@ const REGIONS = [
   [-39.3, -29.9, -14.3, 30.3],
   // v4.5: プレイランド (学校の西・横の道の北の突き当り)
   [-39.3, -30.3, -31.4, -14.0],
-  // v5.12: シロノハウスの敷地 (プレイランドの北)
-  [-39.3, -30.3, -41.0, -31.4],
+  // v5.13: シロノハウスの敷地 (プレイランドの西) — 山の地面・横の道の北端とつながる
+  [-48.6, -39.3, -31.4, -12.5],
+  // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側) と南側の通路
+  [-50.6, -39.3, 15.0, 28.6],
   // v3.19: 山とその周りの地面
   [-59.5, -39.3, -12.5, 12.5]
 ];
@@ -1109,8 +1177,9 @@ function groundH(x, z) {
   if (x >= -9.6 && x <= -5.2 && z >= 20.1 && z <= 26.9) return 0.06;      // 銀の湯 (v5.8)
   if (x >= -9.35 && x <= -6.55 && z >= -11.0 && z <= -8.6) return 0.22;   // はに茶屋の座敷 (小上がり+畳, v5.3)
   if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.3)
-  if (x >= -35.05 && x <= -34.55 && z >= -33.36 && z <= -31.54) return 0.03;  // シロノハウスへの小道 (v5.12)
-  if (x >= -37.0 && x <= -32.6 && z >= -40.2 && z <= -33.8) return 0.06;      // シロノハウス (v5.12)
+  if (x >= -44.5 && x <= -43.9 && z >= -19.35 && z <= -17.35) return 0.03;  // シロノハウスへの小道 (v5.13)
+  if (x >= -46.4 && x <= -42.0 && z >= -26.2 && z <= -19.8) return 0.06;      // シロノハウス (v5.13)
+  if (x >= -50.5 && x <= -39.1 && z >= 15.9 && z <= 26.1) return 0.03;        // 怪鳥飼育場の土 (v5.13)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
@@ -1283,6 +1352,9 @@ async function pollPlayers() {
   // v4.9: 気球の状態 (誰が乗っていつ飛び立ったか) を全員で共有する
   balloonAt = data.balloonAt || 0;
   balloonBy = data.balloonBy || '';
+  // v5.13: 怪鳥の騎乗状態を全員で共有する
+  if (Array.isArray(data.birdsBy)) birdsBy = data.birdsBy;
+  if (Array.isArray(data.birdsAt)) birdsAt = data.birdsAt;
 }
 
 function logOnce(m) {
@@ -1403,8 +1475,8 @@ function renderLoop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // 移動
   let mx = 0, mz = 0;
-  const fwd = (craneOpen || ride || balloonRide || bathing) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
-  const str = (craneOpen || ride || balloonRide || bathing) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const fwd = (craneOpen || ride || balloonRide || bathing || flyBird >= 0) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = (craneOpen || ride || balloonRide || bathing || flyBird >= 0) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   mx = (-sin * fwd + cos * str);
   mz = (-cos * fwd - sin * str);
@@ -1436,6 +1508,8 @@ function renderLoop() {
     // v5.12: 入浴中は湯船の真ん中に固定。お湯 (上面0.55) に胸まで浸かるよう少し沈める
     pos.x = BATH_POS.x; pos.z = BATH_POS.z;
     rideY = -0.14;
+  } else if (flyBird >= 0 && fly) {
+    updateFlight(dt);   // v5.13: 怪鳥で飛行中
   } else rideY = 0;
   // v4.9: 気球本体の動き (balloonAt から全員が同じ高さ・回転を計算する)
   if (balP) {
@@ -1463,14 +1537,14 @@ function renderLoop() {
     const inCha = pos.x > -9.6 && pos.x < -5.2 && pos.z > -14.7 && pos.z < -8.3;  // v5.3: はに茶屋の中
     const inYu = pos.x > -9.6 && pos.x < -5.2 && pos.z > 20.1 && pos.z < 26.9;  // v5.8: 銀の湯の中
     const inSch = pos.x > -29.8 && pos.x < -24.2 && pos.z > -29.0 && pos.z < -18.0;  // v5.9: 学校の中
-    const inSir = pos.x > -37.0 && pos.x < -32.6 && pos.z > -40.2 && pos.z < -33.8;  // v5.12: シロノハウスの中
+    const inSir = pos.x > -46.4 && pos.x < -42.0 && pos.z > -26.2 && pos.z < -19.8;  // v5.13: シロノハウスの中
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -37.0 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
-    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSir ? -32.6 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))))));
+    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -46.4 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
+    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSir ? -42.0 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inSir ? -40.2 : (inSch ? -29.0 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))))))));
-    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSir ? -33.8 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))))))));
+    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inSir ? -26.2 : (inSch ? -29.0 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))))))));
+    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSir ? -19.8 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))))))));
     const ghS = groundHS(pos.x, pos.z); selfStandY = ghS;   // v5.9: 学校の階・階段に対応
     const myY = ghS + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
@@ -1569,7 +1643,8 @@ function renderLoop() {
       const bt = (Date.now() - balloonAt) / 1000;
       if (bt > 0 && bt < BAL_CYCLE) rY = balloonH(bt) + 0.18;
     }
-    r.group.position.set(r.cur.x, groundH(r.cur.x, r.cur.z) + rY + fx.yOff, r.cur.z);
+    r.lastY = groundH(r.cur.x, r.cur.z) + rY;   // v5.13: 怪鳥の配置に使う (エモート分を除いた足元)
+    r.group.position.set(r.cur.x, r.lastY + fx.yOff, r.cur.z);
     r.group.rotation.y = r.cur.yaw + Math.PI;
     r.inner.rotation.x = fx.bowX;
     r.inner.rotation.z = fx.rockZ;
@@ -1577,6 +1652,35 @@ function renderLoop() {
     if (r.bubble && now > r.bubbleUntil) {
       r.group.remove(r.bubble); r.bubble = null;
     }
+  }
+  // v5.13: 怪鳥のアニメーション (止まり木で待つ / 自分が飛行 / 他の人が飛行)
+  for (let bi = 0; bi < 3; bi++) {
+    const B = birdG[bi];
+    if (!B) continue;
+    let targetFlap = -0.12, flying = false;
+    if (flyBird === bi && fly) {
+      B.g.position.set(fly.x, fly.alt, fly.z);
+      B.g.rotation.y = fly.yaw + Math.PI / 2;
+      flying = true;
+    } else if (birdsBy[bi] && remotes.has(birdsBy[bi])) {
+      const r = remotes.get(birdsBy[bi]);
+      B.g.position.set(r.cur.x, (r.lastY || 0) - BIRD_SIT, r.cur.z);
+      B.g.rotation.y = r.cur.yaw + Math.PI / 2;
+      flying = true;
+    } else {
+      B.g.position.set(PERCHES[bi].x, 1.62, PERCHES[bi].z);
+      B.g.rotation.y = 0;
+      if (B.shT < 0 && now > B.nextSh) B.shT = now;   // たまに羽をばたつかせる (クライアントごとのランダム)
+      if (B.shT >= 0) {
+        const u = (now - B.shT) / 650;
+        if (u >= 1) { B.shT = -1; B.nextSh = now + 4000 + Math.random() * 6000; }
+        else targetFlap = -0.12 + Math.sin(u * Math.PI * 4) * 0.38 * (1 - u * 0.4);
+      }
+    }
+    if (flying) targetFlap = 0.08 + Math.sin(now * 0.011 + bi * 2.1) * 0.55;
+    B.flap += (targetFlap - B.flap) * Math.min(1, dt * 14);
+    B.wl.rotation.x = B.flap;
+    B.wr.rotation.x = -B.flap;
   }
   // v4.1: Bar AQUA の水槽の魚がゆっくり泳ぐ (水槽の長さに合わせて往復)
   // 魚の形はワールド座標で焼き込まれているので、反転は魚の中心まわりに補正して回す
@@ -1861,6 +1965,7 @@ $('doEnter').onclick = async () => {
   }
   $('loading').classList.add('hidden');
   ride = null; rideY = 0; bathing = false;
+  if (flyBird >= 0) { apiAuth('/api/bird', { bird: flyBird, off: true }).catch(() => {}); flyBird = -1; fly = null; flyPhase = ''; $('flyPad').classList.add('hidden'); }   // v5.13
   pos.x = START.x; pos.z = START.z; lookAtStart();
   inRoom = true;
   ensureSelfAvatar();
@@ -1886,7 +1991,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn', 'birdBtn', 'flyPad']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1894,7 +1999,7 @@ async function leaveRoom() {
 }
 $('btnLeave').onclick = leaveRoom;
 $('btnLogout2').onclick = async () => { await leaveRoom(); await doLogout(); };
-$('btnReset').onclick = () => { ride = null; balloonRide = false; bathing = false; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
+$('btnReset').onclick = () => { if (flyBird >= 0) { apiAuth('/api/bird', { bird: flyBird, off: true }).catch(() => {}); flyBird = -1; fly = null; flyPhase = ''; $('flyPad').classList.add('hidden'); } ride = null; balloonRide = false; bathing = false; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
 $('btnMenu').onclick = () => $('menuPanel').classList.toggle('hidden');
 $('btnHelp').onclick = () => { $('helpCard').classList.remove('hidden'); $('menuPanel').classList.add('hidden'); };
 $('btnCloseHelp').onclick = () => $('helpCard').classList.add('hidden');
@@ -2031,29 +2136,44 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); $('birdBtn').classList.add('hidden'); $('flyPad').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
-  $('boardBtn').classList.toggle('hidden', d > 2.6);
+  $('boardBtn').classList.toggle('hidden', d > 2.6 || flyBird >= 0);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
-  $('fwBtn').classList.toggle('hidden', df > 3.0);
+  $('fwBtn').classList.toggle('hidden', df > 3.0 || flyBird >= 0);
   let dc = 1e9;
   for (const s of CRANE_SPOTS) dc = Math.min(dc, Math.hypot(pos.x - s.x, pos.z - s.z));
-  $('craneBtn').classList.toggle('hidden', dc > 2.3 || craneOpen);
+  $('craneBtn').classList.toggle('hidden', dc > 2.3 || craneOpen || flyBird >= 0);
   const rb = $('rideBtn');
   if (ride) { rb.textContent = '🎠 おりる'; rb.classList.remove('hidden'); }
   else {
     rb.textContent = '🎠 メリーゴーラウンドに乗る';
-    rb.classList.toggle('hidden', Math.hypot(pos.x - CAR_C.x, pos.z - CAR_C.z) > 3.6 || craneOpen);
+    rb.classList.toggle('hidden', Math.hypot(pos.x - CAR_C.x, pos.z - CAR_C.z) > 3.6 || craneOpen || flyBird >= 0);
   }
   // v4.9: 気球が地上にいて空いている時だけ「乗る」ボタンを出す
   const balIdle = !balloonAt || Date.now() - balloonAt > (BAL_CYCLE + 6) * 1000;
-  $('balBtn').classList.toggle('hidden', balloonRide || !balIdle || craneOpen || Math.hypot(pos.x - BAL_C.x, pos.z - BAL_C.z) > 2.8);
+  $('balBtn').classList.toggle('hidden', balloonRide || flyBird >= 0 || !balIdle || craneOpen || Math.hypot(pos.x - BAL_C.x, pos.z - BAL_C.z) > 2.8);
   // v5.12: 湯船の前に立つと「入浴する」、入浴中は「出る」
   const bb = $('bathBtn');
   if (bathing) { bb.textContent = '🛁 出る'; bb.classList.remove('hidden'); }
   else {
     bb.textContent = '🛁 入浴する';
-    bb.classList.toggle('hidden', craneOpen || ride || balloonRide || Math.hypot(pos.x - BATH_RIM.x, pos.z - BATH_RIM.z) > 2.0);
+    bb.classList.toggle('hidden', craneOpen || ride || balloonRide || flyBird >= 0 || Math.hypot(pos.x - BATH_RIM.x, pos.z - BATH_RIM.z) > 2.0);
+  }
+  // v5.13: 怪鳥。近くの空いている鳥に「乗る」、飛行中は飼育場の上で「おりる」
+  const kb = $('birdBtn');
+  if (flyBird >= 0) {
+    kb.textContent = '🪶 おりる';
+    kb.classList.toggle('hidden', flyPhase === 'landing' || Math.hypot(pos.x - BIRD_HOME.x, pos.z - BIRD_HOME.z) > 8.5);
+  } else {
+    kb.textContent = '🪶 怪鳥に乗る';
+    let near = false;
+    if (!craneOpen && !ride && !balloonRide && !bathing) {
+      for (let i = 0; i < 3; i++) {
+        if (!birdsBy[i] && Math.hypot(pos.x - PERCHES[i].x, pos.z - PERCHES[i].z) < 2.3) { near = true; break; }
+      }
+    }
+    kb.classList.toggle('hidden', !near);
   }
 }, 300);
 
@@ -2127,6 +2247,97 @@ function exitBath() {
   pos.x = -7.75; pos.z = 23.5;   // 洗い場に戻る
 }
 $('bathBtn').onclick = () => { if (bathing) exitBath(); else enterBath(); };
+
+// ---------- 怪鳥 (v5.13): 飼育場で乗って、ボタンの操作で町の上を飛ぶ ----------
+function updateFlight(dt) {
+  const now = performance.now();
+  if (flyPhase === 'takeoff') {
+    // 止まり木からまっすぐ舞い上がってから前進する
+    const u = Math.min(1, (now - flyT0) / 1000);
+    fly.alt = 1.62 + (3.4 - 1.62) * (0.5 - 0.5 * Math.cos(Math.PI * u));
+    if (u >= 1) flyPhase = 'fly';
+  } else if (flyPhase === 'landing') {
+    // 止まり木へゆっくり近づいて降りる
+    const T = PERCHES[flyBird];
+    const dx = T.x - fly.x, dz = T.z - fly.z, da = 1.62 - fly.alt;
+    const dh = Math.hypot(dx, dz);
+    const sp = Math.max(1.2, Math.min(6.5, dh * 1.2)) * dt;
+    if (dh > 0.01) { fly.x += dx / dh * Math.min(sp, dh); fly.z += dz / dh * Math.min(sp, dh); }
+    const va = Math.max(0.8, Math.min(3.5, Math.abs(da) * 1.5)) * dt;
+    fly.alt += Math.sign(da) * Math.min(va, Math.abs(da));
+    let dyw = -Math.PI / 2 - fly.yaw;   // 着陸時は東向き (止まり木の向き) に合わせる
+    while (dyw > Math.PI) dyw -= Math.PI * 2;
+    while (dyw < -Math.PI) dyw += Math.PI * 2;
+    fly.yaw += dyw * Math.min(1, dt * 1.5);
+    if (dh < 0.05 && Math.abs(da) < 0.05) { finishLanding(); return; }
+  } else {
+    // 通常飛行: 前進は自動。ボタン・キー・スティックで旋回と昇降
+    let turn = 0, climb = 0;
+    if (flyInput.l || keys.ArrowLeft) turn += 1;
+    if (flyInput.r || keys.ArrowRight) turn -= 1;
+    if (flyInput.u || keys.ArrowUp) climb += 1;
+    if (flyInput.d || keys.ArrowDown) climb -= 1;
+    turn -= stickVec.x;
+    climb -= stickVec.y;
+    fly.yaw += THREE.MathUtils.clamp(turn, -1, 1) * 1.15 * dt;
+    fly.alt += THREE.MathUtils.clamp(climb, -1, 1) * 3.2 * dt;
+    fly.alt = THREE.MathUtils.clamp(fly.alt, birdMinAlt(fly.x, fly.z), 32);
+    fly.x += -Math.sin(fly.yaw) * 5.5 * dt;
+    fly.z += -Math.cos(fly.yaw) * 5.5 * dt;
+    const dx = fly.x + 15, dz = fly.z - 5, dd = Math.hypot(dx, dz);   // 町の範囲を出ない
+    if (dd > 105) { fly.x = -15 + dx / dd * 105; fly.z = 5 + dz / dd * 105; }
+    fly.alt = Math.max(fly.alt, birdMinAlt(fly.x, fly.z));
+  }
+  pos.x = fly.x; pos.z = fly.z;
+  yaw = fly.yaw;
+  rideY = (fly.alt + BIRD_SIT) - groundHS(pos.x, pos.z);
+}
+async function mountBird(i) {
+  if (birdBusy || flyBird >= 0 || ride || balloonRide || bathing || craneOpen) return;
+  birdBusy = true;
+  try {
+    const { status } = await apiAuth('/api/bird', { bird: i });
+    if (status === 200) {
+      flyBird = i;
+      fly = { x: PERCHES[i].x, z: PERCHES[i].z, alt: 1.62, yaw: -Math.PI / 2 };
+      flyPhase = 'takeoff';
+      flyT0 = performance.now();
+      $('flyPad').classList.remove('hidden');
+    }
+  } catch (e) { /* 通信エラー時は乗らない */ }
+  birdBusy = false;
+}
+function startLanding() {
+  if (flyBird < 0 || flyPhase === 'landing') return;
+  flyPhase = 'landing';
+}
+function finishLanding() {
+  const i = flyBird, T = PERCHES[i];
+  flyBird = -1; fly = null; flyPhase = ''; rideY = 0;
+  pos.x = T.x + 1.0; pos.z = T.z;   // 止まり木の横に降りる
+  yaw = -Math.PI / 2;
+  apiAuth('/api/bird', { bird: i, off: true }).catch(() => {});
+  $('flyPad').classList.add('hidden');
+}
+$('birdBtn').onclick = () => {
+  if (flyBird >= 0) { startLanding(); return; }
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < 3; i++) {
+    if (birdsBy[i]) continue;
+    const d = Math.hypot(pos.x - PERCHES[i].x, pos.z - PERCHES[i].z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  if (best >= 0) mountBird(best);
+};
+for (const [bid, k] of [['flyL', 'l'], ['flyR', 'r'], ['flyU', 'u'], ['flyD', 'd']]) {
+  const b = $(bid);
+  const on = e => { e.preventDefault(); flyInput[k] = true; b.classList.add('on'); };
+  const off = () => { flyInput[k] = false; b.classList.remove('on'); };
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointercancel', off);
+  b.addEventListener('pointerleave', off);
+}
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
 const fwFx = [];   // 進行中の花火
