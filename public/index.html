@@ -74,6 +74,7 @@
   #craneBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(85,48,104,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #rideBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,44,92,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #balBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(43,94,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #bathBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(24,102,110,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #cranePanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(24,16,30,0.96); border: 1px solid rgba(217,165,255,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
   #cranePanel h2 { font-size: 15px; color: #e6c8ff; margin-bottom: 8px; }
   #craneCanvas { display: block; width: 100%; border-radius: 8px; background: #2b2136; }
@@ -104,7 +105,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.11）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.12）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -195,6 +196,7 @@
 <button id="craneBtn" class="hidden">🕹 クレーンゲーム</button>
 <button id="rideBtn" class="hidden">🎠 メリーゴーラウンドに乗る</button>
 <button id="balBtn" class="hidden">🎈 気球に乗る</button>
+<button id="bathBtn" class="hidden">🛁 入浴する</button>
 <div id="cranePanel" class="hidden">
   <h2>🕹 クレーンゲーム</h2>
   <canvas id="craneCanvas" width="360" height="300"></canvas>
@@ -342,8 +344,11 @@ let balP = null;               // v4.9: 気球のピボット (balloon_* メッ�
 const balMeshes = [];          // v4.9: 気球のパーツ
 let balloonAt = 0, balloonBy = '';   // v4.9: サーバーから受け取る気球の状態
 let balloonRide = false;       // v4.9: 自分が乗っているか
+let bathing = false;           // v5.12: 銀の湯で入浴中か
 let lastDragAt = 0;            // v4.9: 最後に視点ドラッグした時刻 (performance.now 基準)
 const BAL_C = { x: -23.8, z: -7.5 };   // v4.9: 気球の定位置 (公園の北の芝生, three座標)
+const BATH_POS = { x: -6.2, z: 23.5 };   // v5.12: 湯船の中の位置 (銀の湯)
+const BATH_RIM = { x: -7.35, z: 23.5 };  // v5.12: 湯船の前の洗い場 (ボタンを出す場所)
 const BAL_TOP = 14, BAL_RISE = 15, BAL_HOLD = 14, BAL_FALL = 15;   // 上昇・滞空・下降 (秒)
 const BAL_CYCLE = BAL_RISE + BAL_HOLD + BAL_FALL;                  // 44秒で一周
 const BAL_SPIN = 0.12;         // v4.9: 飛行中のゆっくりした回転 (rad/s)
@@ -445,6 +450,9 @@ async function initRoom() {
   const SL2 = new THREE.PointLight(0xfff2d8, 8, 11, 2);
   SL2.position.set(-27.4, 4.1, -23.5);
   scene.add(SL2);
+  const NL = new THREE.PointLight(0x9db8ff, 8, 8, 2);
+  NL.position.set(-34.8, 2.0, -37.0);
+  scene.add(NL);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
     const CX = -20, CZ = 0, R = 300;
@@ -480,7 +488,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=510'],
+    ['room', 'assets/starryapa_room.glb?v=512'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -872,6 +880,16 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-25.6, -24.6, -16.98, -16.62],
   [-29.57, -29.23, -15.77, -15.43], // 学校の木の幹
   [-24.77, -24.43, -15.77, -15.43],
+  // v5.12: シロノハウス (プレイランドの北・中に入れる)
+  [-37.0, -35.42, -33.97, -33.63], // 南の壁 (入口より西)
+  [-34.18, -32.6, -33.97, -33.63], // 南の壁 (入口より東)
+  [-37.0, -32.6, -40.37, -40.03],  // 北の壁
+  [-37.17, -36.83, -40.2, -33.8],  // 西の壁
+  [-32.77, -32.43, -40.2, -33.8],  // 東の壁
+  [-36.5, -33.1, -40.10, -37.86],  // 大きなベッド
+  [-36.80, -36.40, -37.64, -36.96], // ナイトテーブル
+  [-33.38, -32.78, -34.54, -34.02], // エナジードリンクのケース
+  [-33.57, -33.33, -32.72, -32.48], // 小道のランプ
   // v3.13: スター商店街（銀の湯の前から西へ伸びる道と小店舗4軒＋アーチ看板）
   [-21.2, -17.4, 18.35, 21.45],   // 花屋の建物
   [-27.2, -23.4, 18.35, 21.45],   // 八百屋の建物
@@ -963,7 +981,8 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-30.35, -29.65, -16.1, -1.55],  // 公園奥の生け垣 (抜け口より北)
   [-18.85, -18.35, -2.85, -0.55],  // 掲示板 (v4.0)
   // v4.5: プレイランド (学校の西) 柵と乗り物
-  [-39.4, -30.2, -31.5, -31.3],    // 北の柵
+  [-39.4, -35.44, -31.5, -31.3],   // 北の柵 (ゲートより西, v5.12)
+  [-34.14, -30.2, -31.5, -31.3],   // 北の柵 (ゲートより東, v5.12)
   [-39.4, -34.6, -14.65, -14.45],  // 南の柵 (ゲートより西)
   [-31.9, -30.2, -14.65, -14.45],  // 南の柵 (ゲートより東)
   [-39.45, -39.25, -31.4, -14.6],  // 西の柵
@@ -1014,6 +1033,8 @@ const REGIONS = [
   [-39.3, -29.9, -14.3, 30.3],
   // v4.5: プレイランド (学校の西・横の道の北の突き当り)
   [-39.3, -30.3, -31.4, -14.0],
+  // v5.12: シロノハウスの敷地 (プレイランドの北)
+  [-39.3, -30.3, -41.0, -31.4],
   // v3.19: 山とその周りの地面
   [-59.5, -39.3, -12.5, 12.5]
 ];
@@ -1088,6 +1109,8 @@ function groundH(x, z) {
   if (x >= -9.6 && x <= -5.2 && z >= 20.1 && z <= 26.9) return 0.06;      // 銀の湯 (v5.8)
   if (x >= -9.35 && x <= -6.55 && z >= -11.0 && z <= -8.6) return 0.22;   // はに茶屋の座敷 (小上がり+畳, v5.3)
   if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.3)
+  if (x >= -35.05 && x <= -34.55 && z >= -33.36 && z <= -31.54) return 0.03;  // シロノハウスへの小道 (v5.12)
+  if (x >= -37.0 && x <= -32.6 && z >= -40.2 && z <= -33.8) return 0.06;      // シロノハウス (v5.12)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
   if (d >= 12) return 0;
@@ -1380,8 +1403,8 @@ function renderLoop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   // 移動
   let mx = 0, mz = 0;
-  const fwd = (craneOpen || ride || balloonRide) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
-  const str = (craneOpen || ride || balloonRide) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
+  const fwd = (craneOpen || ride || balloonRide || bathing) ? 0 : (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - stickVec.y;
+  const str = (craneOpen || ride || balloonRide || bathing) ? 0 : (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + stickVec.x;
   const sin = Math.sin(yaw), cos = Math.cos(yaw);
   mx = (-sin * fwd + cos * str);
   mz = (-cos * fwd - sin * str);
@@ -1409,6 +1432,10 @@ function renderLoop() {
       // 操作していない間は気球と一緒にゆっくり回る。ドラッグ中とその後しばらくは自由に見られる
       if (!dragging && performance.now() - lastDragAt > 2500) yaw += BAL_SPIN * dt;
     }
+  } else if (bathing) {
+    // v5.12: 入浴中は湯船の真ん中に固定。お湯 (上面0.55) に胸まで浸かるよう少し沈める
+    pos.x = BATH_POS.x; pos.z = BATH_POS.z;
+    rideY = -0.14;
   } else rideY = 0;
   // v4.9: 気球本体の動き (balloonAt から全員が同じ高さ・回転を計算する)
   if (balP) {
@@ -1436,13 +1463,14 @@ function renderLoop() {
     const inCha = pos.x > -9.6 && pos.x < -5.2 && pos.z > -14.7 && pos.z < -8.3;  // v5.3: はに茶屋の中
     const inYu = pos.x > -9.6 && pos.x < -5.2 && pos.z > 20.1 && pos.z < 26.9;  // v5.8: 銀の湯の中
     const inSch = pos.x > -29.8 && pos.x < -24.2 && pos.z > -29.0 && pos.z < -18.0;  // v5.9: 学校の中
+    const inSir = pos.x > -37.0 && pos.x < -32.6 && pos.z > -40.2 && pos.z < -33.8;  // v5.12: シロノハウスの中
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))))))))));
-    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))))))))));
+    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -37.0 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
+    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSir ? -32.6 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inSch ? -29.0 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))))))))));
-    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))))))))));
+    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inSir ? -40.2 : (inSch ? -29.0 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))))))));
+    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSir ? -33.8 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))))))));
     const ghS = groundHS(pos.x, pos.z); selfStandY = ghS;   // v5.9: 学校の階・階段に対応
     const myY = ghS + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
@@ -1832,7 +1860,7 @@ $('doEnter').onclick = async () => {
     return;
   }
   $('loading').classList.add('hidden');
-  ride = null; rideY = 0;
+  ride = null; rideY = 0; bathing = false;
   pos.x = START.x; pos.z = START.z; lookAtStart();
   inRoom = true;
   ensureSelfAvatar();
@@ -1858,7 +1886,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -1866,7 +1894,7 @@ async function leaveRoom() {
 }
 $('btnLeave').onclick = leaveRoom;
 $('btnLogout2').onclick = async () => { await leaveRoom(); await doLogout(); };
-$('btnReset').onclick = () => { ride = null; balloonRide = false; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
+$('btnReset').onclick = () => { ride = null; balloonRide = false; bathing = false; rideY = 0; pos.x = START.x; pos.z = START.z; lookAtStart(); };
 $('btnMenu').onclick = () => $('menuPanel').classList.toggle('hidden');
 $('btnHelp').onclick = () => { $('helpCard').classList.remove('hidden'); $('menuPanel').classList.add('hidden'); };
 $('btnCloseHelp').onclick = () => $('helpCard').classList.add('hidden');
@@ -2003,7 +2031,7 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
@@ -2020,6 +2048,13 @@ setInterval(() => {
   // v4.9: 気球が地上にいて空いている時だけ「乗る」ボタンを出す
   const balIdle = !balloonAt || Date.now() - balloonAt > (BAL_CYCLE + 6) * 1000;
   $('balBtn').classList.toggle('hidden', balloonRide || !balIdle || craneOpen || Math.hypot(pos.x - BAL_C.x, pos.z - BAL_C.z) > 2.8);
+  // v5.12: 湯船の前に立つと「入浴する」、入浴中は「出る」
+  const bb = $('bathBtn');
+  if (bathing) { bb.textContent = '🛁 出る'; bb.classList.remove('hidden'); }
+  else {
+    bb.textContent = '🛁 入浴する';
+    bb.classList.toggle('hidden', craneOpen || ride || balloonRide || Math.hypot(pos.x - BATH_RIM.x, pos.z - BATH_RIM.z) > 2.0);
+  }
 }, 300);
 
 // ---------- メリーゴーラウンド乗車 (v4.6): 近づくとボタン、一番近い馬の横に立って一緒に回る ----------
@@ -2079,6 +2114,19 @@ function endBalloonRide() {
   pos.x = BAL_C.x; pos.z = BAL_C.z + 1.7;   // 最終手段は真南
 }
 $('balBtn').onclick = mountBalloon;
+
+// ---------- 入浴 (v5.12): 銀の湯の湯船。ボタンで入って、お湯に浸かる ----------
+function enterBath() {
+  if (bathing || ride || balloonRide) return;
+  bathing = true;
+  pos.x = BATH_POS.x; pos.z = BATH_POS.z;
+}
+function exitBath() {
+  if (!bathing) return;
+  bathing = false; rideY = 0;
+  pos.x = -7.75; pos.z = 23.5;   // 洗い場に戻る
+}
+$('bathBtn').onclick = () => { if (bathing) exitBath(); else enterBath(); };
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
 const fwFx = [];   // 進行中の花火
