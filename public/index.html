@@ -50,6 +50,12 @@
   #count { position: fixed; top: 10px; left: 10px; z-index: 20; background: rgba(30,18,20,0.78); border: 1px solid rgba(255,217,160,0.4); border-radius: 9px; padding: 6px 12px; font-size: 13px; }
   #topRight { position: fixed; top: 10px; right: 10px; z-index: 20; display: flex; gap: 6px; }
   #menuPanel { position: fixed; top: 52px; right: 10px; z-index: 21; display: flex; flex-direction: column; gap: 6px; background: rgba(30,18,20,0.92); border: 1px solid rgba(255,217,160,0.4); border-radius: 12px; padding: 10px; }
+  #ptsBox { color: #ffd76a; font-weight: bold; font-size: 15px; padding: 2px 4px; }
+  #rankBox { color: #ffe9b8; font-size: 13px; padding: 0 4px 2px; line-height: 1.5; }
+  #rankBox .rankT, #boardRank .rankT { color: #ffd76a; font-weight: bold; }
+  #allPtsBox { color: #fff; font-size: 13px; padding: 2px 4px; line-height: 1.6; max-height: 40vh; overflow-y: auto; }
+  #boardRank { color: #ffe9b8; font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
+  #ptsToast { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 40; background: rgba(146,102,16,0.95); color: #fff8e1; border: 1px solid #ffd76a; border-radius: 999px; padding: 8px 18px; font-size: 15px; font-weight: bold; box-shadow: 0 4px 18px rgba(0,0,0,0.4); }
   #helpCard { position: fixed; left: 50%; top: 12%; transform: translateX(-50%); z-index: 22; width: min(92vw, 400px); background: rgba(30,18,20,0.94); border: 1px solid rgba(255,217,160,0.5); border-radius: 14px; padding: 16px 18px; font-size: 13px; line-height: 1.8; }
   #helpCard h2 { font-size: 15px; color: #ffd9a0; margin-bottom: 6px; }
   #helpCard button { margin-top: 10px; width: 100%; }
@@ -172,6 +178,10 @@
   <button class="hud-btn" id="btnMenu">☰ メニュー</button>
 </div>
 <div id="menuPanel" class="hidden">
+  <div id="ptsBox">★ ポイント：<span id="myPts">-</span>pt</div>
+  <div id="rankBox"></div>
+  <button class="hud-btn hidden" id="btnAllPts">👑 みんなのポイント</button>
+  <div id="allPtsBox" class="hidden"></div>
   <button class="hud-btn" id="btnMusic">🎵 音楽OFF</button>
   <button class="hud-btn" id="btnView">📷 視点：一人称</button>
   <button class="hud-btn" id="btnSaveLog">ログ保存</button>
@@ -223,6 +233,7 @@
 </div>
 <div id="boardPanel" class="hidden">
   <h2>掲示板</h2>
+  <div id="boardRank"></div>
   <div id="boardList"></div>
   <div id="boardBar">
     <input type="text" id="boardInput" placeholder="伝言を書く（200文字まで）" maxlength="200">
@@ -230,6 +241,7 @@
   </div>
   <button class="hud-btn" id="btnCloseBoard">とじる</button>
 </div>
+<div id="ptsToast" class="hidden"></div>
 <audio id="bgm" loop preload="auto" src="assets/starry_waltz.mp3"></audio>
 <div id="stick"><div id="stickKnob"></div></div>
 
@@ -280,6 +292,7 @@ function show(id) {
   document.getElementById('room').classList.toggle('hidden', !inRoomUi);
 }
 function showLobby() {
+  updatePtsUi();
   show('lobbyScreen');
   document.getElementById('lobbyInfo').textContent =
     'ログイン中：' + me.displayName + '（' + ({ vera: 'ベラ', girl: '女の子', boy: '男の子' })[me.avatarType] + '）' + (me.isHost ? ' 店主' : '');
@@ -312,6 +325,7 @@ $('doLogin').onclick = async () => {
   if (status !== 200) { $('loginError').textContent = data.error || 'ログインできませんでした'; return; }
   token = data.token; me = data.account;
   localStorage.setItem(TOKEN_KEY, token);
+  applyPoints(data.points, data.bonus || 0);
   showLobby();
 };
 $('doRegister').onclick = async () => {
@@ -323,6 +337,7 @@ $('doRegister').onclick = async () => {
   if (status !== 200) { $('regError').textContent = data.error || '登録できませんでした'; return; }
   token = data.token; me = data.account;
   localStorage.setItem(TOKEN_KEY, token);
+  applyPoints(data.points, data.bonus || 0);
   showLobby();
 };
 async function doLogout() {
@@ -330,6 +345,71 @@ async function doLogout() {
   forceToAuth();
 }
 $('doLogout').onclick = doLogout;
+
+// ---------------- ポイント (v5.16) ----------------
+let myPoints = null, ptsTop = [], ptsToastTimer = null;
+function ptsToast(n) {
+  const t = $('ptsToast');
+  t.textContent = '★ +' + n + 'pt ゲット！';
+  t.classList.remove('hidden');
+  clearTimeout(ptsToastTimer);
+  ptsToastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+}
+function applyPoints(total, added) {
+  if (typeof total === 'number') {
+    if (added) ptsToast(added);
+    else if (myPoints !== null && total > myPoints) ptsToast(total - myPoints);
+    myPoints = total;
+  }
+  updatePtsUi();
+}
+function updatePtsUi() {
+  const mp = $('myPts'); if (mp) mp.textContent = myPoints === null ? '-' : myPoints;
+  const b = $('btnAllPts'); if (b) b.classList.toggle('hidden', !(me && me.isHost));
+}
+function renderRank() {
+  for (const id of ['rankBox', 'boardRank']) {
+    const el = $(id); if (!el) continue;
+    el.innerHTML = '';
+    if (!ptsTop.length) continue;
+    const title = document.createElement('div');
+    title.className = 'rankT'; title.textContent = '🏆 ポイント上位';
+    el.appendChild(title);
+    ptsTop.forEach((t, i) => {
+      const d = document.createElement('div');
+      d.textContent = (i + 1) + '位 ' + t.name + ' ★' + t.points;
+      el.appendChild(d);
+    });
+  }
+}
+async function refreshPoints() {
+  try {
+    const { data } = await apiAuth('/api/points/me', {});
+    if (Array.isArray(data.top)) { ptsTop = data.top; renderRank(); }
+    applyPoints(data.points, 0);
+  } catch (e) {}
+}
+async function earnPoints(kind) {
+  try {
+    const { data } = await apiAuth('/api/points/earn', { kind });
+    applyPoints(data.points, data.added || 0);
+  } catch (e) {}
+}
+$('btnAllPts').onclick = async () => {
+  const box = $('allPtsBox');
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+  try {
+    const { data } = await apiAuth('/api/points/all', {});
+    box.innerHTML = '';
+    for (const r of (data.list || [])) {
+      const d = document.createElement('div');
+      d.textContent = r.name + ' ★' + r.points;
+      box.appendChild(d);
+    }
+    if (!box.children.length) box.textContent = 'まだ誰もいません';
+    box.classList.remove('hidden');
+  } catch (e) {}
+};
 
 // ---------------- 3D ----------------
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1199,7 +1279,7 @@ function groundH(x, z) {
   if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.3)
   if (x >= -44.5 && x <= -43.9 && z >= -19.35 && z <= -17.35) return 0.03;  // シロノハウスへの小道 (v5.13)
   if (x >= -46.4 && x <= -42.0 && z >= -26.2 && z <= -19.8) return 0.06;      // シロノハウス (v5.13)
-  if (x >= -44.5 && x <= -43.9 && z >= -30.95 && z <= -28.95) return 0.03;  // 貸家への小道 (v5.15)
+  if (x >= -44.5 && x <= -43.9 && z >= -30.95 && z <= -28.95) return 0.03;  // 貸家への小道 (v5.16)
   if (x >= -46.4 && x <= -42.0 && z >= -36.3 && z <= -31.3) return 0.06;      // 貸家 (v5.15)
   if (x >= -50.5 && x <= -39.1 && z >= 15.9 && z <= 26.1) return 0.03;        // 怪鳥飼育場の土 (v5.13)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
@@ -1990,6 +2070,7 @@ $('doEnter').onclick = async () => {
   $('loading').classList.remove('hidden');
   try {
     await initRoom();
+    refreshPoints();
   } catch (e) {
     $('loading').classList.add('hidden');
     showLobby();
@@ -2139,6 +2220,7 @@ function renderBoard(posts) {
   }
 }
 async function openBoard() {
+  refreshPoints();
   $('boardPanel').classList.remove('hidden');
   $('boardList').innerHTML = '<div class="bempty">読み込み中…</div>';
   try {
@@ -2156,7 +2238,7 @@ async function sendBoard() {
   const text = inp.value.trim();
   if (!text) return;
   inp.value = '';
-  try { await apiAuth('/api/board/post', { text }); } catch (e) {}
+  try { const bp = await apiAuth('/api/board/post', { text }); applyPoints(bp.data.points, bp.data.added || 0); } catch (e) {}
   openBoard();
 }
 $('boardSend').onclick = sendBoard;
@@ -2220,6 +2302,7 @@ function mountCarousel() {
     if (dd < bd) { bd = dd; best = i; }
   }
   ride = { ha: best * Math.PI / 3 };
+  earnPoints('carousel');
 }
 function dismountCarousel() {
   if (!ride) return;
@@ -2246,6 +2329,7 @@ async function mountBalloon() {
   try {
     const { status, data } = await apiAuth('/api/balloon', {});
     if (status === 200 && data.balloonAt) {
+      applyPoints(data.points, data.added || 0);
       balloonAt = data.balloonAt; balloonBy = data.balloonBy;
       balloonRide = true;
       lastDragAt = performance.now();
@@ -2272,6 +2356,7 @@ function enterBath() {
   if (bathing || ride || balloonRide) return;
   bathing = true;
   pos.x = BATH_POS.x; pos.z = BATH_POS.z;
+  earnPoints('bath');
 }
 function exitBath() {
   if (!bathing) return;
@@ -2329,8 +2414,9 @@ async function mountBird(i) {
   if (birdBusy || flyBird >= 0 || ride || balloonRide || bathing || craneOpen) return;
   birdBusy = true;
   try {
-    const { status } = await apiAuth('/api/bird', { bird: i });
+    const { status, data } = await apiAuth('/api/bird', { bird: i });
     if (status === 200) {
+      applyPoints(data.points, data.added || 0);
       flyBird = i;
       fly = { x: PERCHES[i].x, z: PERCHES[i].z, alt: 1.62, yaw: -Math.PI / 2 };
       flyPhase = 'takeoff';
@@ -2527,6 +2613,7 @@ $('fwBtn').onclick = async () => {
     const { status, data } = await apiAuth('/api/fireworks', {});
     if (status === 200 && data.fireworksAt) {
       lastFwAt = data.fireworksAt;   // 自分の発射はポーリングで二重に上げない
+      applyPoints(data.points, data.added || 0);
       startFwShow();
       btn.textContent = '🎆 発射！';
       btn.disabled = true;
@@ -2683,6 +2770,7 @@ function craneTick(ts) {
         craneBag[got.type] = (craneBag[got.type] || 0) + 1;
         try { localStorage.setItem('starryCraneBag', JSON.stringify(craneBag)); } catch (e) {}
         $('craneBag').textContent = craneBagText();
+        earnPoints(got.type === 'switch2' ? 'crane_big' : 'crane');
         $('craneMsg').textContent = got.type === 'switch2' ? 'すごい！！ ゲーム機（スイッチ2）をとれた！🎉' : 'とれた！ ' + got.name + ' 🎉';
         craneJingle();
         c.prizes.push(craneNewPrize(got.homeX != null ? got.homeX : got.x, c.prizes.some(p => p.type === 'switch2' && !p.gone)));
@@ -2860,7 +2948,7 @@ addEventListener('pagehide', () => {
 (async () => {
   if (token) {
     const { data } = await api('/api/me', { token });
-    if (data.account) { me = data.account; showLobby(); return; }
+    if (data.account) { me = data.account; if (typeof data.points === 'number') myPoints = data.points; showLobby(); return; }
     token = null; localStorage.removeItem(TOKEN_KEY);
   }
   show('authScreen');
