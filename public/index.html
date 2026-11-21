@@ -104,7 +104,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.8）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.9）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -438,6 +438,13 @@ async function initRoom() {
   const YL = new THREE.PointLight(0xeaf6ff, 8, 7, 2);
   YL.position.set(-7.4, 2.3, 23.5);
   scene.add(YL);
+  // v5.9: 学校の明かり (1階と2階)
+  const SL1 = new THREE.PointLight(0xfff2d8, 8, 11, 2);
+  SL1.position.set(-27.4, 2.0, -23.5);
+  scene.add(SL1);
+  const SL2 = new THREE.PointLight(0xfff2d8, 8, 11, 2);
+  SL2.position.set(-27.4, 4.1, -23.5);
+  scene.add(SL2);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
     const CX = -20, CZ = 0, R = 300;
@@ -473,7 +480,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=58'],
+    ['room', 'assets/starryapa_room.glb?v=59'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -855,7 +862,12 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-10.72, -8.92, 30.15, 30.85],  // v3.16: レイナ亭の手前の生け垣 (東)
   [-16.57, -16.23, 19.33, 19.67], [-16.57, -16.23, 25.83, 26.17],
   // v3.12: 学校の校舎（Bar AQUAの裏）
-  [-29.8, -24.2, -29.0, -18.0],   // 学校の校舎
+  // v5.9: 学校の外壁 (中に入れるようになった)
+  [-29.8, -27.87, -18.17, -17.83], // 学校 南の壁 (入口より西)
+  [-26.13, -24.2, -18.17, -17.83], // 学校 南の壁 (入口より東)
+  [-29.8, -24.2, -29.17, -28.83],  // 学校 北の壁
+  [-24.37, -24.03, -29.0, -18.0],  // 学校 東の壁
+  [-29.97, -29.63, -29.0, -18.0],  // 学校 西の壁
   [-29.4, -28.4, -16.98, -16.62], // 学校の前の生け垣
   [-25.6, -24.6, -16.98, -16.62],
   [-29.57, -29.23, -15.77, -15.43], // 学校の木の幹
@@ -1006,6 +1018,57 @@ const REGIONS = [
   [-59.5, -39.3, -12.5, 12.5]
 ];
 // v3.19: 地面の高さ。山 (中心(-47,0)・裾の半径12・頂上の半径3.5・高さ5.58) の上だけ高くなる
+const BOXES1F = [ // v5.9: 学校1階の仕切りと家具 (自分が1階にいる時だけ効く)
+  [-25.96, -25.84, -22.3, -20.5],   // 廊下との仕切り (教室のドアより南。昇降口は開けてある)
+  [-25.96, -25.84, -28.85, -23.3],  // 廊下との仕切り (ドアより北)
+  [-29.65, -25.9, -20.62, -20.38],  // 教室の南の壁
+  [-29.62, -29.14, -20.25, -18.35], // 下駄箱
+  [-28.8, -27.8, -19.48, -19.12],   // 昇降口のベンチ
+  [-28.35, -27.25, -28.62, -27.98], // 教卓
+  [-29.6, -29.1, -23.05, -21.55],   // 教室の本棚
+  [-29.06, -28.34, -24.13, -23.15], [-27.26, -26.54, -24.13, -23.15],   // 生徒の机と椅子
+  [-29.06, -28.34, -25.33, -24.35], [-27.26, -26.54, -25.33, -24.35],
+  [-29.06, -28.34, -26.53, -25.55], [-27.26, -26.54, -26.53, -25.55],
+  [-29.06, -28.34, -27.73, -26.75], [-27.26, -26.54, -27.73, -26.75],
+];
+const BOXES2F = [ // v5.9: 学校2階の仕切りと家具 (自分が2階にいる時だけ効く)
+  [-25.96, -25.84, -25.3, -21.0],   // 廊下との仕切り (音楽室のドアより北)
+  [-25.96, -25.84, -20.0, -18.15],  // 廊下との仕切り (ドアより南)
+  [-25.97, -25.83, -28.0, -25.3],   // 階段わきの手すり
+  [-28.22, -26.78, -28.13, -26.39], // グランドピアノ
+  [-27.95, -27.05, -26.26, -25.94], // ピアノの椅子
+  [-29.62, -29.14, -21.9, -20.1],   // 楽器棚
+  [-29.56, -29.04, -19.86, -19.34], // 太鼓
+  [-24.76, -24.38, -22.05, -19.95], // 廊下のロッカー
+  [-28.96, -28.44, -24.22, -23.37], [-27.16, -26.64, -24.22, -23.37],   // 音楽室の椅子と譜面台
+  [-28.96, -28.44, -25.52, -24.67], [-27.16, -26.64, -25.52, -24.67],
+  [-28.96, -28.44, -26.82, -25.97], [-27.16, -26.64, -26.82, -25.97],
+];
+let selfStandY = 0;   // v5.9: 自分が今立っている地面の高さ (学校の階の判定に使う)
+function inSchool(x, z) { return x > -29.8 && x < -24.2 && z > -29.0 && z < -18.0; }
+function groundHS(x, z) {
+  // v5.9: 学校の中。階段は坂として登れる。階の判定は直前の高さ (階段からしか2階へ行けないので連続する)
+  if (x >= -25.9 && x <= -24.4 && z >= -28.8 && z <= -25.3) return 0.06 + 2.32 * Math.min(1, (-25.3 - z) / 3.3);  // 階段 (最上段の手前で水平に)
+  if (inSchool(x, z)) return selfStandY > 1.2 ? 2.38 : 0.06;
+  return groundH(x, z);
+}
+function schoolY(x, z) { return inSchool(x, z) ? groundHS(x, z) : 0; }   // v5.9: 他の人にも階の高さを伝える (ry に載せる)
+function collideF(nx, nz, list) {
+  const r = 0.3;
+  let fx = nx, fz = nz;
+  for (const [x0, x1, z0, z1] of list) {
+    const cx = Math.max(x0, Math.min(x1, fx));
+    const cz = Math.max(z0, Math.min(z1, fz));
+    const dx = fx - cx, dz = fz - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < r * r) {
+      if (d2 === 0) { fz = z0 - r; continue; }
+      const d = Math.sqrt(d2);
+      fx = cx + dx / d * r; fz = cz + dz / d * r;
+    }
+  }
+  return [fx, fz];
+}
 function groundH(x, z) {
   // v4.2: スツールに乗る仕様 (v4.1.3) は撤回 — 天井が近くて三人称の視界が崩れるため、ベラの希望で元に戻した
   // v4.1.1: 室内の床板の上面の高さ (床に潜らないように)
@@ -1319,7 +1382,8 @@ function renderLoop() {
   const len = Math.hypot(mx, mz);
   if (len > 0.01) {
     const sp = 2.3 * dt / Math.max(1, len);
-    const [nx, nz] = collide(pos.x + mx * sp, pos.z + mz * sp);
+    let [nx, nz] = collide(pos.x + mx * sp, pos.z + mz * sp);
+    if (inSchool(nx, nz)) [nx, nz] = collideF(nx, nz, selfStandY > 1.2 ? BOXES2F : BOXES1F);   // v5.9: 学校の家具は階ごとに
     pos.x = nx; pos.z = nz;
   }
   // v4.6: 乗車中は馬と一緒に回る (本体の回転と同じ時刻・同じ速さで位相を合わせる)
@@ -1365,14 +1429,16 @@ function renderLoop() {
     const inMia = pos.x > -9.5 && pos.x < -5.3 && pos.z > -26.6 && pos.z < -20.4;  // v4.7: ミアんちの中
     const inCha = pos.x > -9.6 && pos.x < -5.2 && pos.z > -14.7 && pos.z < -8.3;  // v5.3: はに茶屋の中
     const inYu = pos.x > -9.6 && pos.x < -5.2 && pos.z > 20.1 && pos.z < 26.9;  // v5.8: 銀の湯の中
+    const inSch = pos.x > -29.8 && pos.x < -24.2 && pos.z > -29.0 && pos.z < -18.0;  // v5.9: 学校の中
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
-    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))));
-    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))));
+    const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75))))))))));
+    const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75))))))))));
     // v3.8.1: z方向の限界も外では小道の端まで広げる (店内の値のままだと小道で真上視点になっていた)
     // v3.9: 公園の西端・芝生の端まで広げる
-    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3)))))))));
-    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))))));
-    const myY = groundH(pos.x, pos.z) + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
+    const camMinZ = inPlay ? -31.5 : (inCha ? -14.7 : (inYu ? 20.1 : (inSch ? -29.0 : (inMia ? -26.6 : (inPoku ? 9.9 : (inReina ? 33.8 : (inIkuo ? 14.85 : (inUme ? 8.9 : (onMtn ? -13.8 : (pos.x < -3.85 ? -31.6 : -3.3))))))))));
+    const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15))))))))));
+    const ghS = groundHS(pos.x, pos.z); selfStandY = ghS;   // v5.9: 学校の階・階段に対応
+    const myY = ghS + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
     else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
@@ -1397,7 +1463,7 @@ function renderLoop() {
     // 一人称では自分の人形が見えないため、エモートが発動したことを視点の動きで伝える:
     // ジャンプ = 視点が同じ弧で跳ねる / お辞儀 = 見下ろして戻る。手をあげるは視点効果なし。
     // 動かすのはカメラだけで、部屋や人形には触らない (床バグ対策 stripGroundPlanes は別途維持)
-    let camY = 1.5 + groundH(pos.x, pos.z) + rideY, camPitch = pitch, camYaw = yaw;  // v3.19: 山の上では視点も上がる。v4.6: 乗車中はデッキ分も
+    let camY = 1.5 + groundHS(pos.x, pos.z) + rideY, camPitch = pitch, camYaw = yaw;  // v3.19: 山の上では視点も上がる。v4.6: 乗車中はデッキ分も
     if (myEmote) {
       const t = (now - myEmote.t0) / 1000;
       if (myEmote.name === 'jump') {
@@ -1420,7 +1486,7 @@ function renderLoop() {
   if (selfAvatar) {
     selfAvatar.group.visible = thirdPerson;
     const sfx = emoteFrame(selfAvatar, now);
-    selfAvatar.group.position.set(pos.x, groundH(pos.x, pos.z) + rideY + sfx.yOff, pos.z);
+    selfAvatar.group.position.set(pos.x, groundHS(pos.x, pos.z) + rideY + sfx.yOff, pos.z);
     selfAvatar.group.rotation.y = yaw + Math.PI;
     selfAvatar.inner.rotation.x = sfx.bowX;
     selfAvatar.inner.rotation.z = sfx.rockZ;
@@ -1575,7 +1641,7 @@ function restoreArm(r) {
 }
 
 function startRoomLoops() {
-  hbTimer = setInterval(() => { apiAuth('/api/heartbeat', { x: pos.x, z: pos.z, yaw, ry: rideY }).catch(() => {}); }, 250);
+  hbTimer = setInterval(() => { apiAuth('/api/heartbeat', { x: pos.x, z: pos.z, yaw, ry: rideY + schoolY(pos.x, pos.z) }).catch(() => {}); }, 250);
   plTimer = setInterval(() => { pollPlayers().catch(() => {}); }, 300);
   msgTimer = setInterval(() => { pollMessages().catch(() => {}); }, 600);
   pollPlayers().catch(() => {});
