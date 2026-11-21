@@ -1,4 +1,5 @@
-// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v4.6
+// StarryApa みんなで歩けるお店 (Render用スタンドアロン版) v5.16
+// v5.16: ポイント制 (ログイン/花火/クレーン/気球/怪鳥/メリーゴーラウンド/掲示板/入浴で加算、Neon保存、ランキングと店主一覧)。
 // v4.6: メリーゴーラウンド乗車用に、heartbeat の ry (足元の高さオフセット) を中継する。
 // v4.3: 山頂の発射ボタンで花火 (全員に /api/players 経由で放送、クールダウン10秒)。星空とウメハウスはクライアント/GLB側。
 // v4.1: ベラ人形は店主専用に (登録時＋起動時に補正)。Bar AQUA の内装はクライアント/GLB側。
@@ -62,6 +63,17 @@ async function storeInit() {
       avatar_color TEXT NOT NULL,
       is_host BOOLEAN NOT NULL DEFAULT FALSE,
       created_at BIGINT NOT NULL
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS points (
+      login_id TEXT PRIMARY KEY,
+      pts INTEGER NOT NULL DEFAULT 0
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS points_daily (
+      login_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      cnt INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (login_id, day, kind)
     )`);
     await pool.query(`CREATE TABLE IF NOT EXISTS board_posts (
       id SERIAL PRIMARY KEY,
@@ -130,6 +142,83 @@ async function boardDelete(id) {
     return;
   }
   await pool.query('DELETE FROM board_posts WHERE id = $1', [id]);
+}
+
+// ---------- ポイント (v5.16) ----------
+// 1日の上限つきで加算する。上限に達していたら added=0 で返す。
+const POINT_RULES = {
+  login:     { pts: 10, cap: 1 },
+  fireworks: { pts: 5,  cap: 10 },
+  crane:     { pts: 3,  cap: 20 },
+  crane_big: { pts: 30, cap: 3 },
+  balloon:   { pts: 5,  cap: 5 },
+  bird:      { pts: 5,  cap: 5 },
+  carousel:  { pts: 3,  cap: 10 },
+  board:     { pts: 3,  cap: 5 },
+  bath:      { pts: 2,  cap: 3 }
+};
+const pointsMem = new Map();   // フォールバック用: loginId -> pts
+const dailyMem = new Map();    // フォールバック用: loginId|day|kind -> cnt
+function jstDay() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+async function pointsOf(key) {
+  if (!pool) return pointsMem.get(key) || 0;
+  const r = await pool.query('SELECT pts FROM points WHERE login_id = $1', [key]);
+  return r.rows.length ? r.rows[0].pts : 0;
+}
+async function awardPoints(key, kind) {
+  const rule = POINT_RULES[kind];
+  if (!rule) return { added: 0, total: await pointsOf(key) };
+  const day = jstDay();
+  if (!pool) {
+    const dk = key + '|' + day + '|' + kind;
+    const cnt = dailyMem.get(dk) || 0;
+    if (cnt >= rule.cap) return { added: 0, total: pointsMem.get(key) || 0 };
+    dailyMem.set(dk, cnt + 1);
+    const total = (pointsMem.get(key) || 0) + rule.pts;
+    pointsMem.set(key, total);
+    return { added: rule.pts, total };
+  }
+  const r = await pool.query('SELECT cnt FROM points_daily WHERE login_id = $1 AND day = $2 AND kind = $3', [key, day, kind]);
+  const cnt = r.rows.length ? r.rows[0].cnt : 0;
+  if (cnt >= rule.cap) return { added: 0, total: await pointsOf(key) };
+  await pool.query(
+    `INSERT INTO points_daily (login_id, day, kind, cnt) VALUES ($1, $2, $3, 1)
+     ON CONFLICT (login_id, day, kind) DO UPDATE SET cnt = points_daily.cnt + 1`,
+    [key, day, kind]);
+  await pool.query(
+    `INSERT INTO points (login_id, pts) VALUES ($1, $2)
+     ON CONFLICT (login_id) DO UPDATE SET pts = points.pts + $2`,
+    [key, rule.pts]);
+  return { added: rule.pts, total: await pointsOf(key) };
+}
+async function pointsTop(n) {
+  let rows;
+  if (!pool) {
+    rows = [...pointsMem.entries()].map(([login_id, pts]) => ({ login_id, pts }));
+  } else {
+    const r = await pool.query('SELECT login_id, pts FROM points ORDER BY pts DESC, login_id ASC LIMIT $1', [n]);
+    rows = r.rows;
+  }
+  rows.sort((a, b) => b.pts - a.pts);
+  return rows.slice(0, n).map(r => {
+    const acc = accounts.get(r.login_id);
+    return { name: acc ? acc.displayName : r.login_id, points: r.pts };
+  });
+}
+async function pointsAll() {
+  const totals = new Map();
+  if (!pool) {
+    for (const [k, v] of pointsMem) totals.set(k, v);
+  } else {
+    const r = await pool.query('SELECT login_id, pts FROM points');
+    for (const row of r.rows) totals.set(row.login_id, row.pts);
+  }
+  const list = [];
+  for (const [key, a] of accounts) list.push({ name: a.displayName, loginId: a.loginId, points: totals.get(key) || 0 });
+  list.sort((a, b) => b.points - a.points);
+  return list;
 }
 
 // ---------- 店主アカウントの種まき (v3.3) ----------
@@ -238,10 +327,11 @@ async function apiRegister(body, res) {
   }
   const token = makeToken(key);
   sessions.set(token, key);
-  return sendJson(res, 200, { token, account: publicAccount(account) });
+  const bonus = await awardPoints(key, 'login');
+  return sendJson(res, 200, { token, account: publicAccount(account), points: bonus.total, bonus: bonus.added });
 }
 
-function apiLogin(body, res) {
+async function apiLogin(body, res) {
   const key = String(body.loginId || '').trim().toLowerCase();
   const password = String(body.password || '');
   const a = accounts.get(key);
@@ -253,12 +343,14 @@ function apiLogin(body, res) {
   }
   const token = makeToken(key);
   sessions.set(token, key);
-  return sendJson(res, 200, { token, account: publicAccount(a) });
+  const bonus = await awardPoints(key, 'login');
+  return sendJson(res, 200, { token, account: publicAccount(a), points: bonus.total, bonus: bonus.added });
 }
 
-function apiMe(body, res) {
+async function apiMe(body, res) {
   const a = authOf(body);
-  return sendJson(res, 200, { account: a ? publicAccount(a) : null });
+  if (!a) return sendJson(res, 200, { account: null });
+  return sendJson(res, 200, { account: publicAccount(a), points: await pointsOf(a.loginId.toLowerCase()) });
 }
 
 function apiLogout(body, res) {
@@ -312,7 +404,7 @@ function apiPlayers(body, res) {
 }
 
 // v4.9: 公園の気球。乗った本人には即時応答し、他の全員には /api/players 経由で伝わる (花火と同じ方式)
-function apiBalloon(body, res) {
+async function apiBalloon(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
   const now = Date.now();
@@ -321,11 +413,12 @@ function apiBalloon(body, res) {
   }
   balloonAt = now;
   balloonBy = a.loginId;
-  return sendJson(res, 200, { ok: true, balloonAt, balloonBy });
+  const pts = await awardPoints(a.loginId.toLowerCase(), 'balloon');
+  return sendJson(res, 200, { ok: true, balloonAt, balloonBy, points: pts.total, added: pts.added });
 }
 
 // v5.13: 怪鳥の騎乗・降鳥。本人には即時応答し、他の全員には /api/players 経由で伝わる (気球と同じ方式)
-function apiBird(body, res) {
+async function apiBird(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
   const i = +body.bird;
@@ -342,11 +435,12 @@ function apiBird(body, res) {
   for (let j = 0; j < 3; j++) if (birdsBy[j] === a.loginId) { birdsBy[j] = ''; birdsAt[j] = 0; }
   birdsBy[i] = a.loginId;
   birdsAt[i] = now;
-  return sendJson(res, 200, { ok: true, birdsBy, birdsAt });
+  const pts = await awardPoints(a.loginId.toLowerCase(), 'bird');
+  return sendJson(res, 200, { ok: true, birdsBy, birdsAt, points: pts.total, added: pts.added });
 }
 
 // v4.3: 山頂の発射ボタン。押した本人には即時応答し、他の全員には /api/players 経由で伝わる
-function apiFireworks(body, res) {
+async function apiFireworks(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
   const now = Date.now();
@@ -354,7 +448,8 @@ function apiFireworks(body, res) {
     return sendJson(res, 429, { error: 'cooldown', retryAfterMs: FIREWORKS_COOLDOWN_MS - (now - fireworksAt) });
   }
   fireworksAt = now;
-  return sendJson(res, 200, { ok: true, fireworksAt });
+  const pts = await awardPoints(a.loginId.toLowerCase(), 'fireworks');
+  return sendJson(res, 200, { ok: true, fireworksAt, points: pts.total, added: pts.added });
 }
 
 function apiEmote(body, res) {
@@ -415,7 +510,8 @@ async function apiBoardPost(body, res) {
   const text = String(body.text || '').trim().slice(0, 200);
   if (!text) return sendJson(res, 400, { error: 'empty' });
   const post = await boardAdd(a.loginId.toLowerCase(), a.displayName, text);
-  return sendJson(res, 200, { ok: true, post });
+  const pts = await awardPoints(a.loginId.toLowerCase(), 'board');
+  return sendJson(res, 200, { ok: true, post, points: pts.total, added: pts.added });
 }
 
 async function apiBoardDelete(body, res) {
@@ -426,6 +522,35 @@ async function apiBoardDelete(body, res) {
   if (!id) return sendJson(res, 400, { error: 'bad id' });
   await boardDelete(id);
   return sendJson(res, 200, { ok: true });
+}
+
+// v5.16: クライアント側だけの遊び (クレーン/メリーゴーラウンド/入浴) の加算受付
+const EARN_KINDS = ['crane', 'crane_big', 'carousel', 'bath'];
+async function apiPointsEarn(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const kind = String(body.kind || '');
+  if (!EARN_KINDS.includes(kind)) return sendJson(res, 400, { error: 'bad kind' });
+  const pts = await awardPoints(a.loginId.toLowerCase(), kind);
+  return sendJson(res, 200, { ok: true, points: pts.total, added: pts.added });
+}
+async function apiPointsMe(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const key = a.loginId.toLowerCase();
+  const top = await pointsTop(3);
+  const all = await pointsTop(1000);
+  let rank = 0;
+  const mine = await pointsOf(key);
+  const sorted = all.map(t => t.points);
+  rank = sorted.filter(p => p > mine).length + 1;
+  return sendJson(res, 200, { points: mine, rank, top });
+}
+async function apiPointsAll(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  if (!a.isHost) return sendJson(res, 403, { error: '店主だけが見られます' });
+  return sendJson(res, 200, { list: await pointsAll() });
 }
 
 const API = {
@@ -444,7 +569,10 @@ const API = {
   '/api/leave': apiLeave,
   '/api/board/list': apiBoardList,
   '/api/board/post': apiBoardPost,
-  '/api/board/delete': apiBoardDelete
+  '/api/board/delete': apiBoardDelete,
+  '/api/points/earn': apiPointsEarn,
+  '/api/points/me': apiPointsMe,
+  '/api/points/all': apiPointsAll
 };
 
 // ---------- HTTP ----------
