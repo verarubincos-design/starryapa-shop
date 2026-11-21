@@ -110,7 +110,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.13）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.14）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -206,6 +206,7 @@
 <div id="flyPad" class="hidden">
   <button id="flyL">◀ 左</button>
   <button id="flyU">▲ 上昇</button>
+  <button id="flyStop">⏸ 止まる</button>
   <button id="flyD">▼ 下降</button>
   <button id="flyR">右 ▶</button>
 </div>
@@ -374,6 +375,8 @@ let flyPhase = '';             // 'takeoff' | 'fly' | 'landing'
 let flyT0 = 0;                 // 離陸を始めた時刻
 let birdBusy = false;          // 騎乗リクエスト送信中
 const flyInput = { l: false, r: false, u: false, d: false };   // 飛行ボタンの押しっぱなし状態
+let flyStop = false;   // v5.14: 空中で止まる (ホバリング) のトグル
+function setFlyStop(v) { flyStop = v; const b = $('flyStop'); if (b) { b.classList.toggle('on', v); b.textContent = v ? '▶ 進む' : '⏸ 止まる'; } }
 function birdMinAlt(x, z) {    // 建物の屋根にぶつからない最低高度
   let m = groundH(x, z) + 1.3;
   if (x >= -29.8 && x <= -24.2 && z >= -29.0 && z <= -18.0) m = Math.max(m, 5.6);        // 学校
@@ -522,7 +525,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=513'],
+    ['room', 'assets/starryapa_room.glb?v=514'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -945,7 +948,7 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側)
   [-39.75, -39.45, 16.2, 25.8],    // 東の柵
   [-50.45, -50.15, 16.2, 25.8],    // 西の柵
-  [-50.3, -39.6, 16.05, 16.35],    // 北の柵
+  [-50.3, -45.5, 16.05, 16.35], [-44.1, -39.6, 16.05, 16.35],    // 山側の柵 (v5.14: ゲート)
   [-50.3, -45.5, 25.65, 25.95],    // 南の柵 (ゲートより西)
   [-44.1, -39.6, 25.65, 25.95],    // 南の柵 (ゲートより東)
   [-45.62, -45.48, 25.83, 25.97],  // 看板の柱 (西)
@@ -1101,8 +1104,8 @@ const REGIONS = [
   [-39.3, -30.3, -31.4, -14.0],
   // v5.13: シロノハウスの敷地 (プレイランドの西) — 山の地面・横の道の北端とつながる
   [-48.6, -39.3, -31.4, -12.5],
-  // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側) と南側の通路
-  [-50.6, -39.3, 15.0, 28.6],
+  // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側) と南側の通路。v5.14: 山の地面 (z〜12.5) とつなげた
+  [-50.6, -39.3, 12.5, 28.6],
   // v3.19: 山とその周りの地面
   [-59.5, -39.3, -12.5, 12.5]
 ];
@@ -1522,7 +1525,8 @@ function renderLoop() {
     // v3.4.3: 三人称カメラ。自キャラの後ろ (視線方向の逆) に回り込んで後ろ姿を見る。
     // 三人称では視点演出 (跳ね・見下ろし) は付けない。人形の動き自体が見えるのが手応えになる
     myEmote = null;
-    const D = 1.8;                                     // キャラからの距離
+    const flying = flyBird >= 0 && !!fly;   // v5.14: 飛行中はカメラを広く・遠くする
+    const D = flying ? 4.2 : 1.8;                                     // キャラからの距離
     const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw); // 視線の前方ベクトル (一人称と共通)
     // 後ろ方向にどれだけ下がれるか: 歩行境界 (collide) の内側マージンまでの距離で決める。
     // 単純な座標クランプだと壁際でカメラがキャラの前に回り込むため、レイ方式にする
@@ -1538,6 +1542,8 @@ function renderLoop() {
     const inYu = pos.x > -9.6 && pos.x < -5.2 && pos.z > 20.1 && pos.z < 26.9;  // v5.8: 銀の湯の中
     const inSch = pos.x > -29.8 && pos.x < -24.2 && pos.z > -29.0 && pos.z < -18.0;  // v5.9: 学校の中
     const inSir = pos.x > -46.4 && pos.x < -42.0 && pos.z > -26.2 && pos.z < -19.8;  // v5.13: シロノハウスの中
+    const inWest = pos.x > -48.6 && pos.x < -39.3 && pos.z > -31.4 && pos.z < -12.5;  // v5.14: シロノハウスの敷地 (外)。範囲が無いと真上視点に化けた
+    const inBird = pos.x > -50.6 && pos.x < -39.3 && pos.z > 12.5 && pos.z < 28.6;  // v5.14: 怪鳥飼育場と山側の通路
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
     const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -46.4 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
     const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSir ? -42.0 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))))));
@@ -1547,14 +1553,19 @@ function renderLoop() {
     const camMaxZ = inPlay ? -14.1 : (inCha ? -8.3 : (inYu ? 26.9 : (inSir ? -19.8 : (inSch ? -18.0 : (inMia ? -20.4 : (inPoku ? 13.1 : (inReina ? 37.3 : (inIkuo ? 19.55 : (inUme ? 12.9 : (onMtn ? 13.8 : (pos.x < -3.85 ? 39.6 : 3.15)))))))))));
     const ghS = groundHS(pos.x, pos.z); selfStandY = ghS;   // v5.9: 学校の階・階段に対応
     const myY = ghS + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
+    // v5.14: 新しい西エリアと飛行中は、上の表より広い範囲で上書きする (範囲外だと tMax が負になって真上視点に化ける)
+    let camMinX2 = camMinX, camMaxX2 = camMaxX, camMinZ2 = camMinZ, camMaxZ2 = camMaxZ;
+    if (inWest) { camMinX2 = -48.9; camMaxX2 = -39.0; camMinZ2 = -31.7; camMaxZ2 = -12.2; }
+    else if (inBird) { camMinX2 = -50.9; camMaxX2 = -39.0; camMinZ2 = 12.2; camMaxZ2 = 28.9; }
+    if (flying) { camMinX2 = -75; camMaxX2 = 15; camMinZ2 = -50; camMaxZ2 = 50; }
     let tMax = D;
-    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX) / fwdX);
-    else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX - pos.x) / -fwdX);
-    if (fwdZ > 0.0001) tMax = Math.min(tMax, (pos.z - camMinZ) / fwdZ);
-    else if (fwdZ < -0.0001) tMax = Math.min(tMax, (camMaxZ - pos.z) / -fwdZ);
+    if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX2) / fwdX);
+    else if (fwdX < -0.0001) tMax = Math.min(tMax, (camMaxX2 - pos.x) / -fwdX);
+    if (fwdZ > 0.0001) tMax = Math.min(tMax, (pos.z - camMinZ2) / fwdZ);
+    else if (fwdZ < -0.0001) tMax = Math.min(tMax, (camMaxZ2 - pos.z) / -fwdZ);
     // v5.11: カメラが内装の壁・家具・ピアノなどにめり込まないよう、当たり判定の箱でも後退距離を絞る
     // (学校のような狭い場所で、カメラが壁の中に入って画面が茶色くなる問題の対策)
-    {
+    if (!flying) {
       const m = 0.12, ox = pos.x, oz = pos.z, dx = -fwdX, dz = -fwdZ;
       let bt = tMax;
       const lists = inSch ? [BOXES, (selfStandY > 1.2 ? BOXES2F : BOXES1F)] : [BOXES];
@@ -2279,11 +2290,12 @@ function updateFlight(dt) {
     if (flyInput.d || keys.ArrowDown) climb -= 1;
     turn -= stickVec.x;
     climb -= stickVec.y;
-    fly.yaw += THREE.MathUtils.clamp(turn, -1, 1) * 1.15 * dt;
-    fly.alt += THREE.MathUtils.clamp(climb, -1, 1) * 3.2 * dt;
+    fly.yaw += THREE.MathUtils.clamp(turn, -1, 1) * 0.8 * dt;   // v5.14: 旋回 1.15→0.8
+    fly.alt += THREE.MathUtils.clamp(climb, -1, 1) * 2.4 * dt;   // v5.14: 昇降 3.2→2.4
     fly.alt = THREE.MathUtils.clamp(fly.alt, birdMinAlt(fly.x, fly.z), 32);
-    fly.x += -Math.sin(fly.yaw) * 5.5 * dt;
-    fly.z += -Math.cos(fly.yaw) * 5.5 * dt;
+    const spd = flyStop ? 0 : 3.6;   // v5.14: 巡航 5.5→3.6。止まるボタンでホバリング
+    fly.x += -Math.sin(fly.yaw) * spd * dt;
+    fly.z += -Math.cos(fly.yaw) * spd * dt;
     const dx = fly.x + 15, dz = fly.z - 5, dd = Math.hypot(dx, dz);   // 町の範囲を出ない
     if (dd > 105) { fly.x = -15 + dx / dd * 105; fly.z = 5 + dz / dd * 105; }
     fly.alt = Math.max(fly.alt, birdMinAlt(fly.x, fly.z));
@@ -2302,6 +2314,7 @@ async function mountBird(i) {
       fly = { x: PERCHES[i].x, z: PERCHES[i].z, alt: 1.62, yaw: -Math.PI / 2 };
       flyPhase = 'takeoff';
       flyT0 = performance.now();
+      setFlyStop(false);
       $('flyPad').classList.remove('hidden');
     }
   } catch (e) { /* 通信エラー時は乗らない */ }
@@ -2309,6 +2322,7 @@ async function mountBird(i) {
 }
 function startLanding() {
   if (flyBird < 0 || flyPhase === 'landing') return;
+  setFlyStop(false);
   flyPhase = 'landing';
 }
 function finishLanding() {
@@ -2338,6 +2352,7 @@ for (const [bid, k] of [['flyL', 'l'], ['flyR', 'r'], ['flyU', 'u'], ['flyD', 'd
   b.addEventListener('pointercancel', off);
   b.addEventListener('pointerleave', off);
 }
+$('flyStop').onclick = () => setFlyStop(!flyStop);   // v5.14: 空中で止まる/進むの切り替え
 
 // ---------- 花火 (v4.3): 山頂のボタンで発射、全員の画面に上がる ----------
 const fwFx = [];   // 進行中の花火
