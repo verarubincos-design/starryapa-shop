@@ -350,7 +350,9 @@ async function apiLogin(body, res) {
 async function apiMe(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 200, { account: null });
-  return sendJson(res, 200, { account: publicAccount(a), points: await pointsOf(a.loginId.toLowerCase()) });
+  // v5.18: 自動ログイン (30日トークン) でも、その日初めてならログインボーナスを付ける
+  const bonus = await awardPoints(a.loginId.toLowerCase(), 'login');
+  return sendJson(res, 200, { account: publicAccount(a), points: bonus.total, bonus: bonus.added });
 }
 
 function apiLogout(body, res) {
