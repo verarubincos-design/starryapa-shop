@@ -110,7 +110,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.14）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.15）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -384,6 +384,7 @@ function birdMinAlt(x, z) {    // 建物の屋根にぶつからない最低高�
   if (x >= -39.4 && x <= -30.2 && z >= -31.5 && z <= -14.5) m = Math.max(m, 9.4);        // プレイランド (観覧車)
   if (x > -30.5 && x < -4.0) m = Math.max(m, 4.9);                                       // 東の街並み
   if (x >= -39.0 && x <= -34.2 && z >= 7.5 && z <= 27.0) m = Math.max(m, 4.3);           // 西の家並み
+  if (x >= -46.6 && x <= -41.8 && z >= -36.5 && z <= -19.6) m = Math.max(m, 5.9);         // v5.15: シロノハウスと貸家の屋根 (三日月飾りが一番高い)
   return m;
 }
 const BAL_TOP = 14, BAL_RISE = 15, BAL_HOLD = 14, BAL_FALL = 15;   // 上昇・滞空・下降 (秒)
@@ -490,6 +491,9 @@ async function initRoom() {
   const NL = new THREE.PointLight(0x9db8ff, 8, 8, 2);
   NL.position.set(-44.2, 2.0, -23.0);   // v5.13: シロノハウスの移転先
   scene.add(NL);
+  const RT = new THREE.PointLight(0xffe8c8, 8, 8, 2);
+  RT.position.set(-44.2, 2.0, -33.8);   // v5.15: 貸家
+  scene.add(RT);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
     const CX = -20, CZ = 0, R = 300;
@@ -525,7 +529,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=514'],
+    ['room', 'assets/starryapa_room.glb?v=515'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -945,6 +949,19 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-46.20, -45.80, -23.64, -22.96], // ナイトテーブル
   [-42.78, -42.18, -20.54, -20.02], // エナジードリンクのケース
   [-42.97, -42.73, -18.22, -17.98], // 小道のランプ
+  // v5.15: 貸家 (シロノハウスの北隣・中に入れる)
+  [-46.4, -44.82, -31.45, -31.15], // 南の壁 (入口より西)
+  [-43.58, -42.0, -31.45, -31.15], // 南の壁 (入口より東)
+  [-46.4, -42.0, -36.38, -36.08],  // 北の壁
+  [-46.48, -46.18, -36.3, -31.3],  // 西の壁
+  [-42.23, -41.93, -36.3, -31.3],  // 東の壁
+  [-46.2, -45.1, -36.2, -34.1],    // ベッド
+  [-43.85, -42.75, -33.0, -32.2],  // テーブル
+  [-43.5, -43.1, -32.15, -31.75],  // 椅子 (南)
+  [-43.5, -43.1, -33.45, -33.05],  // 椅子 (北)
+  [-42.44, -42.09, -35.4, -34.0],  // 本棚
+  [-44.25, -42.45, -36.23, -35.67], // キッチンカウンター
+  [-42.97, -42.73, -30.52, -30.28], // 小道のランプ
   // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側)
   [-39.75, -39.45, 16.2, 25.8],    // 東の柵
   [-50.45, -50.15, 16.2, 25.8],    // 西の柵
@@ -1102,8 +1119,8 @@ const REGIONS = [
   [-39.3, -29.9, -14.3, 30.3],
   // v4.5: プレイランド (学校の西・横の道の北の突き当り)
   [-39.3, -30.3, -31.4, -14.0],
-  // v5.13: シロノハウスの敷地 (プレイランドの西) — 山の地面・横の道の北端とつながる
-  [-48.6, -39.3, -31.4, -12.5],
+  // v5.13: シロノハウスの敷地 (プレイランドの西) — 山の地面・横の道の北端とつながる。v5.15: 貸家の分まで北へ延長
+  [-48.6, -39.3, -38.5, -12.5],
   // v5.13: 怪鳥飼育場 (酒屋・イクオハウスの外側) と南側の通路。v5.14: 山の地面 (z〜12.5) とつなげた
   [-50.6, -39.3, 12.5, 28.6],
   // v3.19: 山とその周りの地面
@@ -1182,6 +1199,8 @@ function groundH(x, z) {
   if (x >= -9.6 && x <= -5.2 && z >= -14.7 && z <= -8.3) return 0.06;     // はに茶屋 (v5.3)
   if (x >= -44.5 && x <= -43.9 && z >= -19.35 && z <= -17.35) return 0.03;  // シロノハウスへの小道 (v5.13)
   if (x >= -46.4 && x <= -42.0 && z >= -26.2 && z <= -19.8) return 0.06;      // シロノハウス (v5.13)
+  if (x >= -44.5 && x <= -43.9 && z >= -30.95 && z <= -28.95) return 0.03;  // 貸家への小道 (v5.15)
+  if (x >= -46.4 && x <= -42.0 && z >= -36.3 && z <= -31.3) return 0.06;      // 貸家 (v5.15)
   if (x >= -50.5 && x <= -39.1 && z >= 15.9 && z <= 26.1) return 0.03;        // 怪鳥飼育場の土 (v5.13)
   if (x >= -39.1 && x <= -30.5 && z >= -31.2 && z <= -14.8) return 0.03;   // プレイランドのパッド (v4.5)
   const d = Math.hypot(x + 47, z);
@@ -1542,7 +1561,8 @@ function renderLoop() {
     const inYu = pos.x > -9.6 && pos.x < -5.2 && pos.z > 20.1 && pos.z < 26.9;  // v5.8: 銀の湯の中
     const inSch = pos.x > -29.8 && pos.x < -24.2 && pos.z > -29.0 && pos.z < -18.0;  // v5.9: 学校の中
     const inSir = pos.x > -46.4 && pos.x < -42.0 && pos.z > -26.2 && pos.z < -19.8;  // v5.13: シロノハウスの中
-    const inWest = pos.x > -48.6 && pos.x < -39.3 && pos.z > -31.4 && pos.z < -12.5;  // v5.14: シロノハウスの敷地 (外)。範囲が無いと真上視点に化けた
+    const inRent = pos.x > -46.4 && pos.x < -42.0 && pos.z > -36.3 && pos.z < -31.3;  // v5.15: 貸家の中
+    const inWest = pos.x > -48.6 && pos.x < -39.3 && pos.z > -38.5 && pos.z < -12.5;  // v5.14: シロノハウスの敷地 (外)。範囲が無いと真上視点に化けた。v5.15: 貸家の分まで北へ
     const inBird = pos.x > -50.6 && pos.x < -39.3 && pos.z > 12.5 && pos.z < 28.6;  // v5.14: 怪鳥飼育場と山側の通路
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
     const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -46.4 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
@@ -1555,7 +1575,8 @@ function renderLoop() {
     const myY = ghS + rideY;  // v3.19: 自分の足元の高さ (山の上ではカメラも一緒に上がる)。v4.6: 乗車中はデッキ分も
     // v5.14: 新しい西エリアと飛行中は、上の表より広い範囲で上書きする (範囲外だと tMax が負になって真上視点に化ける)
     let camMinX2 = camMinX, camMaxX2 = camMaxX, camMinZ2 = camMinZ, camMaxZ2 = camMaxZ;
-    if (inWest) { camMinX2 = -48.9; camMaxX2 = -39.0; camMinZ2 = -31.7; camMaxZ2 = -12.2; }
+    if (inRent) { camMinX2 = -46.4; camMaxX2 = -42.0; camMinZ2 = -36.3; camMaxZ2 = -31.3; }
+    else if (inWest) { camMinX2 = -48.9; camMaxX2 = -39.0; camMinZ2 = -38.8; camMaxZ2 = -12.2; }
     else if (inBird) { camMinX2 = -50.9; camMaxX2 = -39.0; camMinZ2 = 12.2; camMaxZ2 = 28.9; }
     if (flying) { camMinX2 = -75; camMaxX2 = 15; camMinZ2 = -50; camMaxZ2 = 50; }
     let tMax = D;
