@@ -82,7 +82,10 @@
   #balBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(43,94,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #bathBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(24,102,110,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #birdBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(84,60,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
-  #flyPad { position: fixed; left: 50%; transform: translateX(-50%); bottom: 112px; z-index: 17; display: flex; gap: 8px; }
+  #flyPad { position: fixed; left: 50%; transform: translateX(-50%); bottom: 112px; z-index: 17; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+  #flyPad .flyRow { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  #flyOff { background: rgba(146,44,92,0.95) !important; padding: 12px 26px !important; }
+  #flyOff.hidden { display: none; }
   #flyPad.hidden { display: none; }
   #flyPad button { background: rgba(30,30,46,0.88); color: #fff; border: 1px solid rgba(255,217,160,0.55); border-radius: 12px; padding: 12px 14px; font-size: 15px; font-weight: bold; touch-action: none; user-select: none; -webkit-user-select: none; }
   #flyPad button.on { background: rgba(120,90,200,0.95); }
@@ -214,11 +217,14 @@
 <button id="bathBtn" class="hidden">🛁 入浴する</button>
 <button id="birdBtn" class="hidden">🪶 怪鳥に乗る</button>
 <div id="flyPad" class="hidden">
-  <button id="flyL">◀ 左</button>
-  <button id="flyU">▲ 上昇</button>
-  <button id="flyStop">⏸ 止まる</button>
-  <button id="flyD">▼ 下降</button>
-  <button id="flyR">右 ▶</button>
+  <div class="flyRow">
+    <button id="flyL">◀ 左</button>
+    <button id="flyU">▲ 上昇</button>
+    <button id="flyStop">⏸ 止まる</button>
+    <button id="flyD">▼ 下降</button>
+    <button id="flyR">右 ▶</button>
+  </div>
+  <button id="flyOff" class="hidden">🪶 降りる</button>
 </div>
 <div id="cranePanel" class="hidden">
   <h2>🕹 クレーンゲーム</h2>
@@ -346,7 +352,7 @@ async function doLogout() {
 }
 $('doLogout').onclick = doLogout;
 
-// ---------------- ポイント (v5.16) ----------------
+// ---------------- ポイント (v5.18) ----------------
 let myPoints = null, ptsTop = [], ptsToastTimer = null;
 function ptsToast(n) {
   const t = $('ptsToast');
@@ -2277,8 +2283,8 @@ setInterval(() => {
   // v5.13: 怪鳥。近くの空いている鳥に「乗る」、飛行中は飼育場の上で「おりる」
   const kb = $('birdBtn');
   if (flyBird >= 0) {
-    kb.textContent = '🪶 おりる';
-    kb.classList.toggle('hidden', flyPhase === 'landing' || Math.hypot(pos.x - BIRD_HOME.x, pos.z - BIRD_HOME.z) > 8.5);
+    kb.classList.add('hidden');   // v5.17: 飛行中の「おりる」は flyPad 内の専用ボタンに移した (スマホで重なって押せなかった)
+    $('flyOff').classList.toggle('hidden', flyPhase === 'landing' || Math.hypot(pos.x - BIRD_HOME.x, pos.z - BIRD_HOME.z) > 8.5);
   } else {
     kb.textContent = '🪶 怪鳥に乗る';
     let near = false;
@@ -2440,6 +2446,7 @@ function finishLanding() {
   apiAuth('/api/bird', { bird: i, off: true }).catch(() => {});
   $('flyPad').classList.add('hidden');
 }
+$('flyOff').onclick = () => { if (flyBird >= 0) startLanding(); };
 $('birdBtn').onclick = () => {
   if (flyBird >= 0) { startLanding(); return; }
   let best = -1, bd = 1e9;
@@ -2948,7 +2955,7 @@ addEventListener('pagehide', () => {
 (async () => {
   if (token) {
     const { data } = await api('/api/me', { token });
-    if (data.account) { me = data.account; if (typeof data.points === 'number') myPoints = data.points; showLobby(); return; }
+    if (data.account) { me = data.account; applyPoints(data.points, data.bonus || 0); showLobby(); return; }
     token = null; localStorage.removeItem(TOKEN_KEY);
   }
   show('authScreen');
