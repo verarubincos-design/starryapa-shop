@@ -155,7 +155,8 @@ const POINT_RULES = {
   bird:      { pts: 5,  cap: 5 },
   carousel:  { pts: 3,  cap: 10 },
   board:     { pts: 3,  cap: 5 },
-  bath:      { pts: 2,  cap: 3 }
+  bath:      { pts: 2,  cap: 3 },
+  milk:      { pts: 3,  cap: 5 }
 };
 const pointsMem = new Map();   // フォールバック用: loginId -> pts
 const dailyMem = new Map();    // フォールバック用: loginId|day|kind -> cnt
@@ -527,7 +528,7 @@ async function apiBoardDelete(body, res) {
 }
 
 // v5.16: クライアント側だけの遊び (クレーン/メリーゴーラウンド/入浴) の加算受付
-const EARN_KINDS = ['crane', 'crane_big', 'carousel', 'bath'];
+const EARN_KINDS = ['crane', 'crane_big', 'carousel', 'bath', 'milk'];
 async function apiPointsEarn(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
