@@ -84,6 +84,14 @@
   #balBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(43,94,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #bathBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(24,102,110,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #birdBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(84,60,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #milkBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,96,32,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #mofuBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 17; background: rgba(96,116,72,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #milkPanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(30,22,14,0.96); border: 1px solid rgba(255,217,160,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
+  #milkPanel h2 { font-size: 15px; color: #ffe9b8; margin-bottom: 8px; }
+  #milkMsg { min-height: 2.4em; margin-top: 8px; color: #ffe9b8; }
+  #milkGaugeWrap { height: 18px; background: rgba(255,255,255,0.15); border-radius: 9px; margin-top: 8px; overflow: hidden; }
+  #milkGauge { height: 100%; width: 0%; background: linear-gradient(90deg, #fff7e0, #ffd9a0); }
+  #milkCount { margin-top: 6px; color: #ffe9b8; }
   #flyPad { position: fixed; left: 50%; transform: translateX(-50%); bottom: 112px; z-index: 17; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
   #flyPad .flyRow { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
   #flyOff { background: rgba(146,44,92,0.95) !important; padding: 12px 26px !important; }
@@ -121,7 +129,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.15）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.21）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -217,6 +225,8 @@
 <button id="balBtn" class="hidden">🎈 気球に乗る</button>
 <button id="bathBtn" class="hidden">🛁 入浴する</button>
 <button id="birdBtn" class="hidden">🪶 怪鳥に乗る</button>
+<button id="milkBtn" class="hidden">🥛 乳搾り</button>
+<button id="mofuBtn" class="hidden">🐑 もふもふ</button>
 <div id="flyPad" class="hidden">
   <div class="flyRow">
     <button id="flyL">◀ 左</button>
@@ -237,6 +247,16 @@
     <button id="btnCraneClose">とじる</button>
   </div>
   <div id="craneBag"></div>
+</div>
+<div id="milkPanel" class="hidden">
+  <h2>🥛 乳搾り</h2>
+  <div id="milkMsg">「しぼる！」を連打して、バケツをミルクでいっぱいにしよう（10秒）</div>
+  <div id="milkGaugeWrap"><div id="milkGauge"></div></div>
+  <div class="craneBtns">
+    <button id="btnMilk">しぼる！</button>
+    <button id="btnMilkClose">やめる</button>
+  </div>
+  <div id="milkCount"></div>
 </div>
 <div id="boardPanel" class="hidden">
   <h2>掲示板</h2>
@@ -419,6 +439,61 @@ $('btnAllPts').onclick = async () => {
   } catch (e) {}
 };
 
+// ---------------- 乳搾り (v5.21) ----------------
+let milkOpen = false, milkRound = null;   // milkRound: {t0, count, need}
+let milkBottles = +(localStorage.getItem('starryMilk') || 0);
+let mofuAt = 0;
+function milkMsg(t) { $('milkMsg').textContent = t; }
+function milkRender() {
+  $('milkGauge').style.width = milkRound ? Math.min(100, milkRound.count / milkRound.need * 100) + '%' : '0%';
+  $('milkCount').textContent = '🥛 しぼったミルク: ' + milkBottles + '本';
+}
+function startMilkRound() {
+  milkRound = { t0: performance.now(), count: 0, need: 14 };
+  milkMsg('「しぼる！」を連打して、バケツをいっぱいにしよう！（10秒）');
+  milkRender();
+}
+function openMilk() {
+  if (milkOpen) return;
+  milkOpen = true;
+  $('milkPanel').classList.remove('hidden');
+  $('milkBtn').classList.add('hidden');
+  startMilkRound();
+}
+function closeMilk() { milkOpen = false; milkRound = null; $('milkPanel').classList.add('hidden'); }
+setInterval(() => {
+  if (!milkOpen || !milkRound) return;
+  if (performance.now() - milkRound.t0 > 10000) {
+    milkRound = null;
+    milkMsg('時間切れ…牛さんがのんびりしちゃった。もう一回しぼろう');
+    $('milkGauge').style.width = '0%';
+    setTimeout(() => { if (milkOpen) startMilkRound(); }, 700);
+  }
+}, 120);
+$('btnMilk').onclick = () => {
+  if (!milkRound) return;
+  milkRound.count++;
+  milkRender();
+  if (milkRound.count >= milkRound.need) {
+    milkRound = null;
+    milkBottles++; localStorage.setItem('starryMilk', milkBottles);
+    milkMsg('やった！バケツいっぱいのミルクがしぼれた🥛');
+    milkRender();
+    earnPoints('milk');
+    setTimeout(() => { if (milkOpen) startMilkRound(); }, 1000);
+  }
+};
+$('btnMilkClose').onclick = closeMilk;
+$('milkBtn').onclick = openMilk;
+$('mofuBtn').onclick = () => {
+  mofuAt = performance.now();
+  const t = $('ptsToast');
+  t.textContent = '🐑 もふもふ…';
+  t.classList.remove('hidden');
+  clearTimeout(ptsToastTimer);
+  ptsToastTimer = setTimeout(() => t.classList.add('hidden'), 1600);
+};
+
 // ---------------- 3D ----------------
 const isTouch = matchMedia('(pointer: coarse)').matches;
 if (isTouch) document.body.classList.add('touch');
@@ -463,6 +538,11 @@ let flyPhase = '';             // 'takeoff' | 'fly' | 'landing'
 let flyT0 = 0;                 // 離陸を始めた時刻
 let birdBusy = false;          // 騎乗リクエスト送信中
 const flyInput = { l: false, r: false, u: false, d: false };   // 飛行ボタンの押しっぱなし状態
+// v5.21: 牧場の牛と羊 (three座標・fx/fzは顔の向き)
+const COWS = [{ x: -0.8, z: 13.8, fx: -1, fz: 0 }, { x: 2.8, z: 21.5, fx: -0.70, fz: 0.71 }, { x: 0.6, z: 24.9, fx: 1, fz: 0 }];
+const SHEEP = [{ x: 4.6, z: 15.2, fx: -0.86, fz: -0.52 }, { x: 5.3, z: 18.9, fx: 0.83, fz: 0.56 }, { x: -1.6, z: 20.3, fx: 0.36, fz: -0.93 }, { x: 1.9, z: 26.3, fx: -0.59, fz: 0.81 }];
+const cowHeadMesh = [null, null, null], cowTailMesh = [null, null, null], sheepHeadMesh = [null, null, null, null];
+const cowHeadP = [null, null, null], cowTailP = [null, null, null], sheepHeadP = [null, null, null, null];
 let flyStop = false;   // v5.14: 空中で止まる (ホバリング) のトグル
 function setFlyStop(v) { flyStop = v; const b = $('flyStop'); if (b) { b.classList.toggle('on', v); b.textContent = v ? '▶ 進む' : '⏸ 止まる'; } }
 function birdMinAlt(x, z) {    // 建物の屋根にぶつからない最低高度
@@ -617,7 +697,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=515'],
+    ['room', 'assets/starryapa_room.glb?v=521'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -633,6 +713,10 @@ async function initRoom() {
         }
         // v4.5: プレイランドの乗り物 (回転軸で包んでアニメーションする)
         if (o.name.startsWith('balloon_')) balMeshes.push(o);   // v4.9: 気球のパーツを集める
+        const cmd = o.name.match(/^ranch_cow(\d+)_(head|tail)$/);   // v5.21: 牛の頭としっぽ
+        if (cmd) { if (cmd[2] === 'head') cowHeadMesh[+cmd[1]] = o; else cowTailMesh[+cmd[1]] = o; }
+        const smd = o.name.match(/^ranch_sheep(\d+)_head$/);   // v5.21: 羊の頭
+        if (smd) sheepHeadMesh[+smd[1]] = o;
         const bmd = o.name.match(/^bird(\d+)_/);   // v5.13: 怪鳥のパーツを集める
         if (bmd) birdParts[+bmd[1]].push(o);
         if (o.name === 'play_wheel') playWheelMesh = o;
@@ -672,6 +756,13 @@ async function initRoom() {
           else g.attach(m);
         }
         birdG[bi] = { g, wl, wr, flap: -0.12, nextSh: performance.now() + 3000 + Math.random() * 5000, shT: -1 };
+      }
+      for (let ci = 0; ci < 3; ci++) {   // v5.21: 牛の頭 (首元) としっぽ (付け根)
+        if (cowHeadMesh[ci]) cowHeadP[ci] = pivotize(cowHeadMesh[ci], COWS[ci].x + COWS[ci].fx * 0.42, 0.95, COWS[ci].z + COWS[ci].fz * 0.42);
+        if (cowTailMesh[ci]) cowTailP[ci] = pivotize(cowTailMesh[ci], COWS[ci].x - COWS[ci].fx * 0.44, 0.95, COWS[ci].z - COWS[ci].fz * 0.44);
+      }
+      for (let si = 0; si < 4; si++) {   // v5.21: 羊の頭 (首元)
+        if (sheepHeadMesh[si]) sheepHeadP[si] = pivotize(sheepHeadMesh[si], SHEEP[si].x + SHEEP[si].fx * 0.28, 0.64, SHEEP[si].z + SHEEP[si].fz * 0.28);
       }
       playWheelP = pivotize(playWheelMesh, PLAY_HUB.x, PLAY_HUB.y, PLAY_HUB.z);
       playCarP = pivotize(playCarMesh, -34.8, 0, -21.4);
@@ -1172,7 +1263,28 @@ const BOXES = [ // [minX, maxX, minZ, maxZ] three.js座標
   [-39.17, -38.83, -25.77, -25.43], // ランプ (中西)
   [-30.77, -30.43, -25.77, -25.43], // ランプ (中東)
   [-37.2, -35.6, -26.85, -26.35],  // ベンチ (広場・西) v4.5.2
-  [-34.0, -32.4, -26.85, -26.35]   // ベンチ (広場・東) v4.5.2
+  [-34.0, -32.4, -26.85, -26.35],  // ベンチ (広場・東) v4.5.2
+  // v5.21: 牧場 (柵・牛舎・動物・小物)。西の柵はゲート z[17.7,19.3] だけ抜けられる
+  [-3.5, 6.5, 27.05, 27.35],    // 柵 (北)
+  [-3.5, 6.5, 9.65, 9.95],      // 柵 (南)
+  [6.25, 6.55, 9.8, 27.2],      // 柵 (東)
+  [-3.55, -3.25, 19.3, 27.2],   // 柵 (西・ゲートより北)
+  [-3.55, -3.25, 9.8, 17.7],    // 柵 (西・ゲートより南)
+  [-3.92, -3.74, 17.6, 17.9],   // 「牧場」看板の柱 (南) — 柱の間をくぐれる
+  [-3.92, -3.74, 19.1, 19.4],   // 「牧場」看板の柱 (北)
+  [5.85, 6.0, 22.8, 26.4],      // 牛舎の背の壁
+  [3.85, 5.95, 26.25, 26.42],   // 牛舎の側壁 (北)
+  [3.85, 5.95, 22.78, 22.95],   // 牛舎の側壁 (南)
+  [4.8, 5.6, 24.8, 25.6],       // 牛舎の干し草
+  [-2.85, -1.75, 16.35, 16.85], // 水飲み桶
+  [3.3, 3.9, 12.3, 12.9],       // 干し草ロール
+  [-1.25, -0.35, 13.4, 14.2],   // 牛0
+  [2.35, 3.25, 21.1, 21.9],     // 牛1
+  [0.15, 1.05, 24.5, 25.3],     // 牛2
+  [4.3, 4.9, 14.9, 15.5],       // 羊0
+  [5.0, 5.6, 18.6, 19.2],       // 羊1
+  [-1.9, -1.3, 20.0, 20.6],     // 羊2
+  [1.6, 2.2, 26.0, 26.6]        // 羊3
 ];
 // v3.5: 歩ける範囲は「店内」「庭」「出入口の通り道」の3つの矩形の和集合。
 // 西の壁は通り道の幅だけ抜けられる (ドアが開いている)
@@ -1203,6 +1315,8 @@ const REGIONS = [
   // v3.10: 芝生をミアんちの先まで拡張
   // v3.16: 芝生をレイナ亭の先まで拡張
   [-29.9, -4.02, -31.0, 39.5],
+  // v5.21: 牧場とその前の原っぱ (芝生の東端から柵の中まで)
+  [-4.02, 6.55, 9.6, 27.4],
   // v3.18: 公園の向こうの横の道と酒屋・イクオハウスの敷地 (西の地面の範囲内)
   [-39.3, -29.9, -14.3, 30.3],
   // v4.5: プレイランド (学校の西・横の道の北の突き当り)
@@ -1665,6 +1779,7 @@ function renderLoop() {
     const inRent = pos.x > -46.4 && pos.x < -42.0 && pos.z > -36.3 && pos.z < -31.3;  // v5.15: 貸家の中
     const inWest = pos.x > -48.6 && pos.x < -39.3 && pos.z > -38.5 && pos.z < -12.5;  // v5.14: シロノハウスの敷地 (外)。範囲が無いと真上視点に化けた。v5.15: 貸家の分まで北へ
     const inBird = pos.x > -50.6 && pos.x < -39.3 && pos.z > 12.5 && pos.z < 28.6;  // v5.14: 怪鳥飼育場と山側の通路
+    const inRanch = pos.x > -4.2 && pos.x < 6.7 && pos.z > 9.4 && pos.z < 27.6;  // v5.21: 牧場の中と前
     const westMinX = (pos.z > -14.5 && pos.z < 30.5) ? -39.6 : -30.4;  // v3.18: 横の道の緯度では地面の西端まで
     const camMinX = inPlay ? -39.5 : (inCha ? -9.6 : (inYu ? -9.6 : (inSir ? -46.4 : (inSch ? -29.8 : (inMia ? -9.5 : (inPoku ? -9.0 : (inReina ? -14.9 : (inIkuo ? -38.3 : (inUme ? -38.0 : (onMtn ? -60.5 : (pos.x < -3.85 ? westMinX : -3.75)))))))))));
     const camMaxX = inPlay ? -30.1 : (inCha ? -5.2 : (inYu ? -5.2 : (inSir ? -42.0 : (inSch ? -24.2 : (inMia ? -5.3 : (inPoku ? -5.8 : (inReina ? -10.2 : (inIkuo ? -34.75 : (inUme ? -34.7 : (onMtn ? -33.0 : (pos.x < -3.85 ? -4.35 : 3.75)))))))))));
@@ -1679,6 +1794,7 @@ function renderLoop() {
     if (inRent) { camMinX2 = -46.4; camMaxX2 = -42.0; camMinZ2 = -36.3; camMaxZ2 = -31.3; }
     else if (inWest) { camMinX2 = -48.9; camMaxX2 = -39.0; camMinZ2 = -38.8; camMaxZ2 = -12.2; }
     else if (inBird) { camMinX2 = -50.9; camMaxX2 = -39.0; camMinZ2 = 12.2; camMaxZ2 = 28.9; }
+    else if (inRanch) { camMinX2 = -4.8; camMaxX2 = 7.8; camMinZ2 = 8.4; camMaxZ2 = 28.6; }
     if (flying) { camMinX2 = -75; camMaxX2 = 15; camMinZ2 = -50; camMaxZ2 = 50; }
     let tMax = D;
     if (fwdX > 0.0001) tMax = Math.min(tMax, (pos.x - camMinX2) / fwdX);
@@ -1841,6 +1957,13 @@ function renderLoop() {
   {
     const pt = now * 0.001;
     if (koiP) { koiP.rotation.y = pt * 0.25; koiP.position.y = Math.sin(pt * 1.7) * 0.008; }   // v5.3: 鯉が池をゆっくり回る
+    for (let ci = 0; ci < 3; ci++) {   // v5.21: 牛がのんびり頭を上下させ、しっぽを揺らす
+      if (cowHeadP[ci]) cowHeadP[ci].position.y = 0.95 + Math.sin(pt * 1.25 + ci * 2.1) * 0.022;
+      if (cowTailP[ci]) cowTailP[ci].rotation.y = Math.sin(pt * 2.1 + ci * 1.7) * 0.35;
+    }
+    for (let si = 0; si < 4; si++) {   // v5.21: 羊の頭も小さく上下 (もふもふ直後は大きく)
+      if (sheepHeadP[si]) sheepHeadP[si].position.y = 0.64 + Math.sin(pt * 1.6 + si * 1.3) * (performance.now() - mofuAt < 1200 ? 0.05 : 0.015);
+    }
     if (playWheelP) {
       const th = pt * 0.3;
       playWheelP.rotation.z = th;
@@ -2109,8 +2232,8 @@ $('doEnter').onclick = async () => {
   for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar']) $(el).classList.remove('hidden');
   setupTouchControlsOnce();
   $('helpText').innerHTML = isTouch
-    ? '左下のスティックで移動、画面をドラッグで見回します。<br>右下の💨ボタンを押している間はダッシュ（速歩き）できます。<br>下の入力欄からチャット、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。'
-    : 'ドラッグで見回す、WASD／矢印キーで移動。Shiftキーを押している間はダッシュ（速歩き）できます。<br>Enterキーでチャット入力、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。';
+    ? '左下のスティックで移動、画面をドラッグで見回します。<br>右下の💨ボタンを押している間はダッシュ（速歩き）できます。<br>下の入力欄からチャット、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。<br>牧場（銀の湯とポクテハウスの東）では、牛の乳搾りでポイントがもらえて、羊はもふもふできます。'
+    : 'ドラッグで見回す、WASD／矢印キーで移動。Shiftキーを押している間はダッシュ（速歩き）できます。<br>Enterキーでチャット入力、右のボタンでエモートができます。<br>メニューの「視点」で一人称／三人称を切り替えられます（三人称だと自分の後ろ姿が見えます）。<br>牧場（銀の湯とポクテハウスの東）では、牛の乳搾りでポイントがもらえて、羊はもふもふできます。';
   $('helpCard').classList.remove('hidden');
   startRoomLoops();
   setMusic(true);
@@ -2125,7 +2248,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn', 'birdBtn', 'flyPad']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn', 'birdBtn', 'flyPad', 'milkBtn', 'mofuBtn', 'milkPanel']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -2271,7 +2394,7 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); $('birdBtn').classList.add('hidden'); $('flyPad').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); $('birdBtn').classList.add('hidden'); $('flyPad').classList.add('hidden'); $('milkBtn').classList.add('hidden'); $('mofuBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6 || flyBird >= 0);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
@@ -2279,6 +2402,11 @@ setInterval(() => {
   let dc = 1e9;
   for (const s of CRANE_SPOTS) dc = Math.min(dc, Math.hypot(pos.x - s.x, pos.z - s.z));
   $('craneBtn').classList.toggle('hidden', dc > 2.3 || craneOpen || flyBird >= 0);
+  // v5.21: 牧場。牛に近づくと乳搾り、羊に近づくともふもふ
+  let dm = 1e9; for (const c of COWS) dm = Math.min(dm, Math.hypot(pos.x - c.x, pos.z - c.z));
+  $('milkBtn').classList.toggle('hidden', dm > 2.3 || milkOpen || craneOpen || flyBird >= 0 || ride || balloonRide || bathing);
+  let ds = 1e9; for (const s2 of SHEEP) ds = Math.min(ds, Math.hypot(pos.x - s2.x, pos.z - s2.z));
+  $('mofuBtn').classList.toggle('hidden', ds > 2.0 || milkOpen || craneOpen || flyBird >= 0);
   const rb = $('rideBtn');
   if (ride) { rb.textContent = '🎠 おりる'; rb.classList.remove('hidden'); }
   else {
