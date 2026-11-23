@@ -129,7 +129,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.22）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.23）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -664,10 +664,10 @@ async function initRoom() {
   scene.add(RT);
   // v5.22: 〈StarryHouse〉の明かり (1階ホールと2階)
   const SHL1 = new THREE.PointLight(0xffe6c4, 10, 13, 2);
-  SHL1.position.set(6.0, 2.0, -19.0);
+  SHL1.position.set(6.0, 2.7, -19.0);
   scene.add(SHL1);
   const SHL2 = new THREE.PointLight(0xffe6c4, 10, 13, 2);
-  SHL2.position.set(6.0, 4.2, -19.0);
+  SHL2.position.set(6.0, 5.7, -19.0);
   scene.add(SHL2);
   // v4.2: 空に星をちりばめる (街の中心の上空ドームに2層。またたきは renderLoop で)
   {
@@ -704,7 +704,7 @@ async function initRoom() {
   const loader = new GLTFLoader(manager);
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
-    ['room', 'assets/starryapa_room.glb?v=522'],
+    ['room', 'assets/starryapa_room.glb?v=523'],
     ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
   ];
   let done = 0;
@@ -1408,8 +1408,8 @@ function inHouse(x, z) { return x > 0.5 && x < 11.5 && z > -24.5 && z < -13.5; }
 function groundHS(x, z) {
   // v5.9: 学校の中。階段は坂として登れる。階の判定は直前の高さ (階段からしか2階へ行けないので連続する)
   let h;
-  if (x >= 3.4 && x <= 9.9 && z >= -15.05 && z <= -14.2) h = 0.06 + 2.32 * Math.min(1, (9.9 - x) / 6.5);  // v5.22: StarryHouseの階段 (南の壁沿いを西へ登る長い直階段)
-  else if (inHouse(x, z)) h = selfStandY > 1.2 ? 2.38 : 0.06;
+  if (x >= 3.4 && x <= 9.9 && z >= -15.05 && z <= -14.2) h = 0.06 + 3.12 * Math.min(1, (9.9 - x) / 6.5);  // v5.23: StarryHouseの階段 (南の壁沿いを西へ登る長い直階段・各階+0.8mで16段)
+  else if (inHouse(x, z)) h = selfStandY > 1.2 ? 3.18 : 0.06;
   else if (x >= -25.9 && x <= -24.4 && z >= -28.8 && z <= -25.3) h = 0.06 + 2.32 * Math.min(1, (-25.3 - z) / 3.3);  // 階段 (最上段の手前で水平に)
   else if (inSchool(x, z)) h = selfStandY > 1.2 ? 2.38 : 0.06;
   else return groundH(x, z);
@@ -1894,11 +1894,11 @@ function renderLoop() {
       if (!overStair && cy > 2.02 && cy < 2.62) cy = selfStandY > 1.2 ? 2.62 : 2.02;
     }
     if (inHou) {
-      // v5.22: 学校と同じ天井・床スラブ対策を StarryHouse にも
-      const ceilY = (selfStandY > 1.2 ? 4.41 : 2.26) - 0.22;
+      // v5.23: 学校と同じ天井・床スラブ対策を StarryHouse にも (各階+0.8m)
+      const ceilY = (selfStandY > 1.2 ? 6.01 : 3.06) - 0.22;
       if (cy > ceilY) cy = ceilY;
       const overStairH = cx >= 3.4 && cx <= 9.9 && cz >= -15.05 && cz <= -14.2;
-      if (!overStairH && cy > 2.02 && cy < 2.62) cy = selfStandY > 1.2 ? 2.62 : 2.02;
+      if (!overStairH && cy > 2.82 && cy < 3.42) cy = selfStandY > 1.2 ? 3.42 : 2.82;
     }
     camera.position.set(cx, cy, cz);
     // キャラの少し上・少し前を見る
