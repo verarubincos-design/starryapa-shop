@@ -129,7 +129,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.24）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.25）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -1956,7 +1956,7 @@ function renderLoop() {
     // (ry はハートビート＋ポーリング経由で遅れるため、見る側で気球とキャラがずれて見えた)
     if (balloonAt && balloonBy && rid === balloonBy) {
       const bt = (Date.now() - balloonAt) / 1000;
-      if (bt > 0 && bt < BAL_CYCLE) rY = balloonH(bt) + 0.18;
+      if (bt > 0 && bt < BAL_CYCLE) { rY = balloonH(bt) + 0.18; r.cur.x = BAL_C.x; r.cur.z = BAL_C.z; }   // v5.25: 高さだけでなく位置もカゴの真ん中に固定 (乗り手側の画面更新が止まっていても、見る側では必ずカゴの中に乗っているように見える)
     }
     r.lastY = groundH(r.cur.x, r.cur.z) + rY;   // v5.13: 怪鳥の配置に使う (エモート分を除いた足元)
     r.group.position.set(r.cur.x, r.lastY + fx.yOff, r.cur.z);
