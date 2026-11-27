@@ -86,6 +86,8 @@
   #birdBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(84,60,140,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #milkBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 66px; z-index: 17; background: rgba(146,96,32,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
   #mofuBtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: 118px; z-index: 17; background: rgba(96,116,72,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: bold; }
+  #hugBtn { position: fixed; left: 50%; transform: translateX(-112%); bottom: 170px; z-index: 17; background: rgba(146,64,96,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: bold; }
+  #chuBtn { position: fixed; left: 50%; transform: translateX(12%); bottom: 170px; z-index: 17; background: rgba(178,84,120,0.94); color: #fff; border: 1px solid rgba(255,217,160,0.6); border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: bold; }
   #milkPanel { position: fixed; left: 50%; top: 4%; transform: translateX(-50%); z-index: 24; width: min(94vw, 400px); background: rgba(30,22,14,0.96); border: 1px solid rgba(255,217,160,0.55); border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #fff; }
   #milkPanel h2 { font-size: 15px; color: #ffe9b8; margin-bottom: 8px; }
   #milkMsg { min-height: 2.4em; margin-top: 8px; color: #ffe9b8; }
@@ -129,7 +131,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.27）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.29）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -193,6 +195,7 @@
 <div id="menuPanel" class="hidden">
   <div id="ptsBox">★ ポイント：<span id="myPts">-</span>pt</div>
   <button class="hud-btn hidden" id="btnAllPts">👑 みんなのポイント</button>
+  <button class="hud-btn hidden" id="btnDoll">🎁 オリジナルキャラにする</button>
   <div id="allPtsBox" class="hidden"></div>
   <button class="hud-btn" id="btnMusic">🎵 音楽OFF</button>
   <button class="hud-btn" id="btnView">📷 視点：一人称</button>
@@ -227,6 +230,8 @@
 <button id="birdBtn" class="hidden">🪶 怪鳥に乗る</button>
 <button id="milkBtn" class="hidden">🥛 乳搾り</button>
 <button id="mofuBtn" class="hidden">🐑 もふもふ</button>
+<button id="hugBtn" class="hidden">🤗 ハグ</button>
+<button id="chuBtn" class="hidden">💗 ちゅー</button>
 <div id="flyPad" class="hidden">
   <div class="flyRow">
     <button id="flyL">◀ 左</button>
@@ -394,6 +399,12 @@ function applyPoints(total, added) {
 function updatePtsUi() {
   const mp = $('myPts'); if (mp) mp.textContent = myPoints === null ? '-' : myPoints;
   const b = $('btnAllPts'); if (b) b.classList.toggle('hidden', !(me && me.isHost));
+  const bd = $('btnDoll');   // v5.29: オリジナル人形を解放された人だけ
+  if (bd) {
+    const has = !!(me && me.doll);
+    bd.classList.toggle('hidden', !has);
+    if (has) bd.textContent = me.avatarType === me.doll ? '🎁 もとの人形にもどす' : '🎁 オリジナルキャラにする';
+  }
 }
 function renderRank() {
   for (const id of ['boardRank']) {   // v5.20: 上位3人の表示は掲示板だけに (メニューからは外した)
@@ -437,6 +448,29 @@ $('btnAllPts').onclick = async () => {
     if (!box.children.length) box.textContent = 'まだ誰もいません';
     box.classList.remove('hidden');
   } catch (e) {}
+};
+
+// ---------------- オリジナル人形の切り替え (v5.29) ----------------
+function dollToast(msg) {
+  const t = $('ptsToast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(ptsToastTimer);
+  ptsToastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+}
+$('btnDoll').onclick = async () => {
+  if (!me || !me.doll) return;
+  const toDoll = me.avatarType !== me.doll;
+  if (toDoll) localStorage.setItem('starryBaseAvatar', me.avatarType);
+  const type = toDoll ? me.doll : (localStorage.getItem('starryBaseAvatar') || 'boy');
+  try {
+    const { data } = await apiAuth('/api/avatar/set', { type });
+    if (data && data.account) {
+      me = data.account;
+      dollToast(toDoll ? '🎁 オリジナルキャラになったよ！' : 'もとの人形にもどしたよ');
+      setTimeout(() => location.reload(), 900);
+    } else dollToast('うまくいかなかった…もう一度試してね');
+  } catch (e) { dollToast('うまくいかなかった…もう一度試してね'); }
 };
 
 // ---------------- 乳搾り (v5.21) ----------------
@@ -571,8 +605,9 @@ let meteors = [];      // v4.8: 流れ星 (クライアントごとにランダ�
 let nextMeteorAt = 0;  // 次の流れ星が出る時刻 (performance.now 基準)
 let meteorTex = null;  // 流れ星の頭の光のテクスチャ (初回に生成)
 const COLOR_HEX = { red: 0xc23b47, blue: 0x4070cc, green: 0x4da653, yellow: 0xe6bf3f };
-const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt' };
-const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb' };
+const RECOLOR_MAT = { vera: 'violet', girl: 'violet', boy: 'shirt', pokute: '__none__' };
+const DOLL_URL = { vera: 'assets/vera_doll.glb', girl: 'assets/girl_guest.glb', boy: 'assets/boy_doll.glb', pokute: 'assets/pokute_doll.glb' };
+const DOLL_SCALE = { pokute: 0.88 };   // v5.29: ポクテ人形はちょっと小柄
 
 function showError(msg) {
   let box = $('errBox');
@@ -709,7 +744,7 @@ async function initRoom() {
   const load = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
   const jobs = [
     ['room', 'assets/starryapa_room.glb?v=526'],
-    ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy]
+    ['vera', DOLL_URL.vera], ['girl', DOLL_URL.girl], ['boy', DOLL_URL.boy], ['pokute', DOLL_URL.pokute]
   ];
   let done = 0;
   for (const [key, url] of jobs) {
@@ -918,7 +953,7 @@ function createAvatar(p, isSelf = false) {
   }
   const box = new THREE.Box3().setFromObject(inner);
   const h = box.max.y - box.min.y;
-  const s = 1.0 / h;
+  const s = (DOLL_SCALE[p.avatarType] || 1) / h;
   inner.scale.setScalar(s);
   inner.position.y = -box.min.y * s;
   const group = new THREE.Group();
@@ -1527,6 +1562,10 @@ addEventListener('keydown', e => {
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
+// v5.28: キーを押したまま別アプリや通知に切り替わると keyup を取りこぼして勝手に動き続けるので、
+// フォーカスを失った瞬間に押下状態を全部クリアする (ポクテさんの「かってにうごく」対策)
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) for (const k in keys) keys[k] = false; });
 
 // v5.19: ダッシュ (PCはShiftキー、スマホは💨ボタンを押している間だけ速く歩く)
 let dashTouch = false;
@@ -1650,6 +1689,7 @@ async function pollPlayers() {
         r.lastEmoteAt = p.emoteAt;
         restoreArm(r); // 前の「手をあげる」が途中でも腕を戻してから次へ
         r.emote = { name: p.emote, t0: performance.now() };
+        if (p.emote === 'chu') setBubble(r, '💗'); // v5.28: ちゅーのハート
       }
     }
     else remotes.set(p.id, createAvatar(p));
@@ -2125,6 +2165,23 @@ function emoteFrame(r, now) {
     if (!r.armParts.length && !(r.armPartsL && r.armPartsL.length)) {
       out.rockZ = Math.sin(t * 10) * 0.12; // フォールバック: 体を揺らす (回転はする)
     }
+  } else if (name === 'hug') {
+    // ハグ (v5.28): 両手を上げて少し前かがみになる (1.4秒)
+    if (t >= 1.4) { restoreArm(r); r.emote = null; return out; }
+    let k;
+    if (t < 0.25) k = t / 0.25;
+    else if (t < 1.15) k = 1;
+    else k = (1.4 - t) / 0.25;
+    const ang = THREE.MathUtils.degToRad(105) * k;
+    if (r.armParts.length && r.armPivot) applyArmRaise(r, ang);
+    if (r.armPartsL && r.armPartsL.length && r.armPivotL) applyArmRaiseL(r, ang);
+    if (!r.armParts.length && !(r.armPartsL && r.armPartsL.length)) out.rockZ = Math.sin(t * 10) * 0.1 * k;
+    out.bowX = THREE.MathUtils.degToRad(17) * Math.sin(Math.PI * t / 1.4);
+  } else if (name === 'chu') {
+    // ちゅー (v5.28): 小さく2回はねて前かがみ。ハートは吹き出し側で出す (0.9秒)
+    if (t >= 0.9) { r.emote = null; return out; }
+    out.yOff = 0.09 * Math.abs(Math.sin(Math.PI * t / 0.45));
+    out.bowX = THREE.MathUtils.degToRad(12) * Math.sin(Math.PI * t / 0.9);
   }
   return out;
 }
@@ -2344,7 +2401,7 @@ async function leaveRoom() {
   stopRoomLoops();
   setMusic(false);
   try { await apiAuth('/api/leave', {}); } catch (e) {}
-  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn', 'birdBtn', 'flyPad', 'milkBtn', 'mofuBtn', 'milkPanel']) $(el).classList.add('hidden');
+  for (const el of ['room', 'count', 'topRight', 'chatLog', 'chatBar', 'emoteBar', 'menuPanel', 'helpCard', 'boardBtn', 'boardPanel', 'fwBtn', 'craneBtn', 'cranePanel', 'rideBtn', 'balBtn', 'bathBtn', 'birdBtn', 'flyPad', 'milkBtn', 'mofuBtn', 'milkPanel', 'hugBtn', 'chuBtn']) $(el).classList.add('hidden');
   for (const [, r] of remotes) scene.remove(r.group);
   remotes.clear();
   if (selfAvatar) selfAvatar.group.visible = false;
@@ -2382,7 +2439,7 @@ $('btnSaveLog').onclick = () => {
 };
 
 // ---------------- チャット ----------------
-$('chatInput').addEventListener('focus', () => { chatFocused = true; });
+$('chatInput').addEventListener('focus', () => { chatFocused = true; for (const k in keys) keys[k] = false; });
 $('chatInput').addEventListener('blur', () => { chatFocused = false; });
 let chatSending = false;
 async function sendChat() {
@@ -2482,7 +2539,7 @@ async function sendBoard() {
   openBoard();
 }
 $('boardSend').onclick = sendBoard;
-$('boardInput').addEventListener('focus', () => { chatFocused = true; });
+$('boardInput').addEventListener('focus', () => { chatFocused = true; for (const k in keys) keys[k] = false; });
 $('boardInput').addEventListener('blur', () => { chatFocused = false; });
 $('boardInput').addEventListener('keydown', e => {
   e.stopPropagation();
@@ -2490,7 +2547,7 @@ $('boardInput').addEventListener('keydown', e => {
   else if (e.key === 'Escape') $('boardInput').blur();
 });
 setInterval(() => {
-  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); $('birdBtn').classList.add('hidden'); $('flyPad').classList.add('hidden'); $('milkBtn').classList.add('hidden'); $('mofuBtn').classList.add('hidden'); return; }
+  if (!inRoom) { $('boardBtn').classList.add('hidden'); $('fwBtn').classList.add('hidden'); $('craneBtn').classList.add('hidden'); $('rideBtn').classList.add('hidden'); $('balBtn').classList.add('hidden'); $('bathBtn').classList.add('hidden'); $('birdBtn').classList.add('hidden'); $('flyPad').classList.add('hidden'); $('milkBtn').classList.add('hidden'); $('mofuBtn').classList.add('hidden'); $('hugBtn').classList.add('hidden'); $('chuBtn').classList.add('hidden'); return; }
   const d = Math.hypot(pos.x - BOARD_POS.x, pos.z - BOARD_POS.z);
   $('boardBtn').classList.toggle('hidden', d > 2.6 || flyBird >= 0);
   const df = Math.hypot(pos.x - FW_POS.x, pos.z - FW_POS.z);
@@ -2503,6 +2560,11 @@ setInterval(() => {
   $('milkBtn').classList.toggle('hidden', dm > 2.3 || milkOpen || craneOpen || flyBird >= 0 || ride || balloonRide || bathing);
   let ds = 1e9; for (const s2 of SHEEP) ds = Math.min(ds, Math.hypot(pos.x - s2.x, pos.z - s2.z));
   $('mofuBtn').classList.toggle('hidden', ds > 2.0 || milkOpen || craneOpen || flyBird >= 0);
+  // v5.28: 他のプレイヤーに近づいた時だけハグ/ちゅーのボタンを出す (常設ボタンを増やさない)
+  let dp = 1e9; for (const r of remotes.values()) dp = Math.min(dp, Math.hypot(pos.x - r.cur.x, pos.z - r.cur.z));
+  const nearPlayer = dp <= 1.8 && !craneOpen && !milkOpen && flyBird < 0 && !ride && !balloonRide && !bathing;
+  $('hugBtn').classList.toggle('hidden', !nearPlayer);
+  $('chuBtn').classList.toggle('hidden', !nearPlayer);
   const rb = $('rideBtn');
   if (ride) { rb.textContent = '🎠 おりる'; rb.classList.remove('hidden'); }
   else {
@@ -3173,6 +3235,7 @@ function doEmote(name) {
   if (selfAvatar) {
     restoreArm(selfAvatar); // 前の「手をあげる」が途中でも腕を戻してから次へ (リモートと同じ)
     selfAvatar.emote = { name, t0: now };
+    if (name === 'chu') setBubble(selfAvatar, '💗'); // v5.28
   }
   // 視点フィードバックは一人称の時だけ (三人称では人形の動きが見えるので付けない)
   if (!thirdPerson && (name === 'jump' || name === 'bow' || name === 'joy')) myEmote = { name, t0: now };
@@ -3182,6 +3245,8 @@ $('emoteRaise').onclick = () => doEmote('raise');
 $('emoteJump').onclick = () => doEmote('jump');
 $('emoteBow').onclick = () => doEmote('bow');
 $('emoteJoy').onclick = () => doEmote('joy');
+$('hugBtn').onclick = () => doEmote('hug'); // v5.28: 近くの人がいる時だけ出るボタン
+$('chuBtn').onclick = () => doEmote('chu');
 
 // ページを閉じる時に退室
 addEventListener('pagehide', () => {
