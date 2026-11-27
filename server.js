@@ -82,12 +82,13 @@ async function storeInit() {
       text TEXT NOT NULL,
       created_at BIGINT NOT NULL
     )`);
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS doll TEXT'); // v5.29: オリジナル人形の解放
     const r = await pool.query('SELECT * FROM accounts');
     for (const row of r.rows) {
       accounts.set(row.login_id, {
         loginId: row.login_name, salt: row.salt, hash: row.hash,
         displayName: row.display_name, avatarType: row.avatar_type,
-        avatarColor: row.avatar_color, isHost: row.is_host,
+        avatarColor: row.avatar_color, isHost: row.is_host, doll: row.doll || null,
         createdAt: Number(row.created_at)
       });
     }
@@ -102,10 +103,10 @@ async function storeInit() {
 async function storeSaveAccount(a) {
   if (!pool) { saveData(); return; }
   await pool.query(
-    `INSERT INTO accounts (login_id, login_name, salt, hash, display_name, avatar_type, avatar_color, is_host, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO accounts (login_id, login_name, salt, hash, display_name, avatar_type, avatar_color, is_host, created_at, doll)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [a.loginId.toLowerCase(), a.loginId, a.salt, a.hash, a.displayName,
-     a.avatarType, a.avatarColor, !!a.isHost, a.createdAt]
+     a.avatarType, a.avatarColor, !!a.isHost, a.createdAt, a.doll || null]
   );
 }
 
@@ -274,7 +275,7 @@ const sessions = new Map();  // token -> loginId(小文字)
 const presence = new Map();  // loginId(小文字) -> {x, z, yaw, lastSeen, joinedAt, emote, emoteAt}
 const PRESENCE_FRESH_MS = 30000;
 const PRESENCE_KEEP_MS = 180000;
-const EMOTES = ['raise', 'jump', 'bow', 'joy'];
+const EMOTES = ['raise', 'jump', 'bow', 'joy', 'hug', 'chu']; // v5.28
 let messages = [];           // {id, name, text, ts}
 let nextMsgId = 1;
 let fireworksAt = 0;         // v4.3: 花火が最後に発射された時刻 (全員への放送は /api/players の応答に載せる)
@@ -286,13 +287,14 @@ let birdsBy = ['', '', ''];  // v5.13: 怪鳥3羽に乗っている人の loginI
 let birdsAt = [0, 0, 0];     // v5.13: 怪鳥に乗り始めた時刻
 
 const AVATAR_TYPES = ['vera', 'girl', 'boy'];
+const DOLL_TYPES = ['pokute'];   // v5.29: ごほうびオリジナル人形 (解放した本人だけが使える)
 const AVATAR_COLORS = ['violet', 'red', 'blue', 'green', 'yellow'];
 
 function hashPw(pw, salt) {
   return crypto.pbkdf2Sync(pw, salt, 100000, 32, 'sha256').toString('hex');
 }
 function publicAccount(a) {
-  return { loginId: a.loginId, displayName: a.displayName, avatarType: a.avatarType, avatarColor: a.avatarColor, isHost: a.isHost };
+  return { loginId: a.loginId, displayName: a.displayName, avatarType: a.avatarType, avatarColor: a.avatarColor, isHost: a.isHost, doll: a.doll || null };
 }
 function authOf(body) {
   if (!body || !body.token) return null;
@@ -316,7 +318,7 @@ async function apiRegister(body, res) {
   const salt = crypto.randomBytes(16).toString('hex');
   const account = {
     loginId, salt, hash: hashPw(password, salt), displayName, avatarType, avatarColor,
-    isHost: key === 'vera', createdAt: Date.now()
+    isHost: key === 'vera', doll: null, createdAt: Date.now()
   };
   accounts.set(key, account);
   try {
@@ -549,6 +551,38 @@ async function apiPointsMe(body, res) {
   rank = sorted.filter(p => p > mine).length + 1;
   return sendJson(res, 200, { points: mine, rank, top });
 }
+// v5.29: アバターの切り替え (通常人形 + 解放済みのオリジナル人形だけ許可)
+async function apiAvatarSet(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  const key = a.loginId.toLowerCase();
+  const type = String(body.type || '');
+  let ok = AVATAR_TYPES.includes(type) && !(type === 'vera' && key !== HOST_LOGIN_ID);
+  if (DOLL_TYPES.includes(type) && a.doll === type) ok = true;
+  if (!ok) return sendJson(res, 403, { error: 'その人形は使えません' });
+  a.avatarType = type;
+  if (pool) { try { await pool.query('UPDATE accounts SET avatar_type = $1 WHERE login_id = $2', [type, key]); } catch (e) { console.error('アバター変更のDB保存に失敗:', e.message); } }
+  else saveData();
+  return sendJson(res, 200, { account: publicAccount(a) });
+}
+
+// v5.29: 店主がオリジナル人形を解放する (500pt到達の確認後に使う)
+async function apiDollGrant(body, res) {
+  const a = authOf(body);
+  if (!a) return sendJson(res, 401, { authFailed: true });
+  if (!a.isHost) return sendJson(res, 403, { error: '店主だけが渡せます' });
+  const key = String(body.loginId || '').trim().toLowerCase();
+  const doll = body.doll === null || body.doll === undefined ? null : String(body.doll);
+  if (doll !== null && !DOLL_TYPES.includes(doll)) return sendJson(res, 400, { error: '不明な人形です' });
+  const target = accounts.get(key);
+  if (!target) return sendJson(res, 404, { error: 'そのアカウントがありません' });
+  target.doll = doll;
+  if (doll === null && DOLL_TYPES.includes(target.avatarType)) target.avatarType = 'girl';
+  if (pool) { try { await pool.query('UPDATE accounts SET doll = $1, avatar_type = $2 WHERE login_id = $3', [doll, target.avatarType, key]); } catch (e) { console.error('人形付与のDB保存に失敗:', e.message); } }
+  else saveData();
+  return sendJson(res, 200, { ok: true, account: publicAccount(target) });
+}
+
 async function apiPointsAll(body, res) {
   const a = authOf(body);
   if (!a) return sendJson(res, 401, { authFailed: true });
@@ -575,7 +609,7 @@ const API = {
   '/api/board/delete': apiBoardDelete,
   '/api/points/earn': apiPointsEarn,
   '/api/points/me': apiPointsMe,
-  '/api/points/all': apiPointsAll
+  '/api/points/all': apiPointsAll, '/api/avatar/set': apiAvatarSet, '/api/doll/grant': apiDollGrant
 };
 
 // ---------- HTTP ----------
@@ -638,7 +672,9 @@ const server = http.createServer((req, res) => {
 async function normalizeAvatars() {
   let fixed = 0;
   for (const [key, a] of accounts) {
-    if (a.avatarType === 'vera' && key !== HOST_LOGIN_ID) {
+    let bad = a.avatarType === 'vera' && key !== HOST_LOGIN_ID;
+    if (DOLL_TYPES.includes(a.avatarType) && a.doll !== a.avatarType) bad = true;   // v5.29: 解放されていないオリジナル人形
+    if (bad) {
       a.avatarType = 'girl';
       fixed++;
       if (pool) {
@@ -649,7 +685,7 @@ async function normalizeAvatars() {
   }
   if (fixed > 0) {
     if (!pool) saveData();
-    console.log('ベラ人形の店主専用化: ' + fixed + ' 件のアカウントを女の子に補正しました');
+    console.log('アバター補正: ' + fixed + ' 件のアカウントを女の子に補正しました');
   }
 }
 
