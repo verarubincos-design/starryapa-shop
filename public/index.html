@@ -131,7 +131,7 @@
 <div id="authScreen" class="screen">
   <div class="card">
     <h1>StarryApa</h1>
-    <div class="sub">みんなで歩ける小さなお店（v5.29）</div>
+    <div class="sub">みんなで歩ける小さなお店（v5.30）</div>
     <div class="tabs">
       <button id="tabLogin" class="active">ログイン</button>
       <button id="tabRegister">新規登録</button>
@@ -2011,6 +2011,10 @@ function renderLoop() {
     selfAvatar.inner.rotation.x = sfx.bowX;
     selfAvatar.inner.rotation.z = sfx.rockZ;
     selfAvatar.inner.rotation.y = sfx.spinY;
+    // v5.30: 自分の吹き出し (ちゅーのハート等) も期限が来たら消す (リモート側だけ消えて自分の画面に残るバグの修正)
+    if (selfAvatar.bubble && now > selfAvatar.bubbleUntil) {
+      selfAvatar.group.remove(selfAvatar.bubble); selfAvatar.bubble = null;
+    }
   }
   // リモート補間 + エモート
   for (const [rid, r] of remotes) {
